@@ -8,6 +8,13 @@ import {
   getAllDocuments,
   getProjects,
   getProject,
+  queryComponentDependencies,
+  queryFlowIntegrations,
+  queryFlowTriggers,
+  queryWebResources,
+  queryFormEventHandlers,
+  queryHardcodedLiterals,
+  queryEntityRelationshipsFlat,
 } from '../db';
 import { SimilarityResult } from '../../types/db';
 import { AgentExecutionContext, AgentActivityStep } from './agentTypes';
@@ -575,8 +582,418 @@ export function createListSolutionsTool() {
   });
 }
 
+export function createAnalyzeColumnImpactTool() {
+  return tool({
+    name: 'analyze_column_impact',
+    description:
+      'Analyze the downstream blast radius and impact of modifying, deleting, or refactoring a Dataverse column/attribute. ' +
+      'Queries relational dependencies across Cloud Flows, Canvas Apps, JavaScript Web Resources, Form Event Handlers, and Entity Relationships.',
+    parameters: z.object({
+      entity_name: z
+        .string()
+        .describe('Logical name or schema name of the Dataverse table, e.g. "account", "contoso_ticket"'),
+      column_name: z
+        .string()
+        .describe('Logical name of the column/attribute to evaluate, e.g. "contoso_prioritycode", "telephone1"'),
+      projectId: z
+        .string()
+        .optional()
+        .describe('Optional solution/project ID to scope the analysis'),
+    }),
+    execute: async ({ entity_name, column_name, projectId }, runContext) => {
+      const context = runContext?.context as AgentExecutionContext | undefined;
+      const targetProjectId = projectId || context?.projectId;
+      const cleanEntity = entity_name.toLowerCase().trim();
+      const cleanCol = column_name.toLowerCase().trim();
+
+      const { stepId, startTime } = startStep(
+        context,
+        'analyze_column_impact',
+        `Analyzing impact of column "${cleanCol}" on entity "${cleanEntity}"`,
+        { entity_name: cleanEntity, column_name: cleanCol, projectId: targetProjectId }
+      );
+
+      try {
+        // 1. Direct dependencies
+        const deps = await queryComponentDependencies(targetProjectId, cleanEntity, cleanCol);
+
+        // 2. Form event handlers
+        const formHandlers = await queryFormEventHandlers(targetProjectId, cleanEntity, cleanCol);
+
+        // 3. Relationships where this is foreign key
+        const rels = await queryEntityRelationshipsFlat(targetProjectId, cleanEntity);
+        const fkRels = rels.filter(
+          (r) => r.referencing_attribute && r.referencing_attribute.toLowerCase() === cleanCol
+        );
+
+        const totalImpacts = deps.length + formHandlers.length + fkRels.length;
+
+        // Group dependencies by source type
+        const flowDeps = deps.filter((d) => d.source_type === 'flow');
+        const appDeps = deps.filter((d) => d.source_type === 'canvas_app');
+        const jsDeps = deps.filter((d) => d.source_type === 'javascript');
+
+        let riskLevel = 'Low';
+        if (fkRels.length > 0) riskLevel = 'CRITICAL (Foreign Key)';
+        else if (jsDeps.length > 0 || flowDeps.some((f) => f.operation_type === 'WRITE')) riskLevel = 'HIGH';
+        else if (flowDeps.length > 0 || appDeps.length > 0) riskLevel = 'MEDIUM';
+
+        const result = {
+          entity: cleanEntity,
+          column: cleanCol,
+          risk_level: riskLevel,
+          total_impact_count: totalImpacts,
+          cloud_flows_affected: flowDeps.map((f) => ({
+            flow_name: f.source_name,
+            location: f.location_detail,
+            operation: f.operation_type,
+            snippet: f.context_snippet,
+          })),
+          canvas_apps_affected: appDeps.map((a) => ({
+            app_name: a.source_name,
+            location: a.location_detail,
+            operation: a.operation_type,
+            snippet: a.context_snippet,
+          })),
+          javascript_scripts_affected: jsDeps.map((j) => ({
+            script_name: j.source_name,
+            location: j.location_detail,
+            operation: j.operation_type,
+            snippet: j.context_snippet,
+          })),
+          form_event_handlers_affected: formHandlers.map((h) => ({
+            form_name: h.form_name,
+            event_type: h.event_type,
+            library: h.library_name,
+            handler_function: h.function_name,
+          })),
+          relationships_affected: fkRels.map((r) => ({
+            relationship_type: r.relationship_type,
+            primary_entity: r.primary_entity,
+            referencing_entity: r.referencing_entity,
+            foreign_key: r.referencing_attribute,
+            cascade_delete: r.cascade_delete,
+          })),
+        };
+
+        finishStep(
+          context,
+          stepId,
+          startTime,
+          `Found ${totalImpacts} dependencies across components (Risk: ${riskLevel})`
+        );
+
+        return JSON.stringify(result, null, 2);
+      } catch (err: any) {
+        finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
+        return `Error analyzing column impact: ${err?.message || err}`;
+      }
+    },
+  });
+}
+
+export function createAnalyzeValidationImpactTool() {
+  return tool({
+    name: 'analyze_validation_impact',
+    description:
+      'Analyze the impact of adding validation rules, restrictions, or making a field required on a Dataverse table. ' +
+      'Evaluates all automated Cloud Flows, Canvas Apps, and JavaScript scripts that perform write operations on the table.',
+    parameters: z.object({
+      entity_name: z
+        .string()
+        .describe('Logical name of the Dataverse table, e.g. "account", "contoso_ticket"'),
+      column_name: z
+        .string()
+        .describe('The column/attribute where validation or required level is being added'),
+      validation_type: z
+        .string()
+        .optional()
+        .default('required')
+        .describe('Type of validation: "required", "restricted_values", "range", or "regex"'),
+      projectId: z
+        .string()
+        .optional()
+        .describe('Optional solution/project ID'),
+    }),
+    execute: async ({ entity_name, column_name, validation_type = 'required', projectId }, runContext) => {
+      const context = runContext?.context as AgentExecutionContext | undefined;
+      const targetProjectId = projectId || context?.projectId;
+      const cleanEntity = entity_name.toLowerCase().trim();
+      const cleanCol = column_name.toLowerCase().trim();
+
+      const { stepId, startTime } = startStep(
+        context,
+        'analyze_validation_impact',
+        `Analyzing validation impact of "${cleanCol}" on table "${cleanEntity}"`,
+        { entity_name: cleanEntity, column_name: cleanCol, validation_type, projectId: targetProjectId }
+      );
+
+      try {
+        // Query all WRITE operations on this table
+        const writeDeps = await queryComponentDependencies(targetProjectId, cleanEntity, undefined, 'WRITE');
+
+        // Check which writes explicitly provide this column
+        const columnWrites = await queryComponentDependencies(targetProjectId, cleanEntity, cleanCol, 'WRITE');
+        const writingSources = new Set(columnWrites.map((w) => w.source_id));
+
+        // Sources that write to this table but do NOT provide this column
+        const tableLevelWrites = writeDeps.filter((w) => !w.target_field);
+        const atRiskSources = tableLevelWrites.filter((w) => !writingSources.has(w.source_id));
+
+        // Form event handlers
+        const formHandlers = await queryFormEventHandlers(targetProjectId, cleanEntity, cleanCol);
+
+        const result = {
+          entity: cleanEntity,
+          column: cleanCol,
+          validation_type,
+          summary: `Evaluated ${writeDeps.length} write operations on ${cleanEntity}.`,
+          components_writing_this_field: columnWrites.map((w) => ({
+            source_type: w.source_type,
+            name: w.source_name,
+            location: w.location_detail,
+            snippet: w.context_snippet,
+          })),
+          components_writing_table_without_this_field: atRiskSources.map((w) => ({
+            source_type: w.source_type,
+            name: w.source_name,
+            location: w.location_detail,
+            risk_warning: `Performs ${w.operation_type} on ${cleanEntity} without setting ${cleanCol}. If ${cleanCol} is made required, this operation will fail with runtime validation error.`,
+          })),
+          client_scripts_enforcing_field: formHandlers.map((h) => ({
+            form_name: h.form_name,
+            event_type: h.event_type,
+            library: h.library_name,
+            function: h.function_name,
+          })),
+        };
+
+        finishStep(
+          context,
+          stepId,
+          startTime,
+          `Identified ${atRiskSources.length} potential contract breach points and ${columnWrites.length} existing writers`
+        );
+
+        return JSON.stringify(result, null, 2);
+      } catch (err: any) {
+        finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
+        return `Error analyzing validation impact: ${err?.message || err}`;
+      }
+    },
+  });
+}
+
+export function createQueryFlowIntegrationsTool() {
+  return tool({
+    name: 'query_flow_integrations',
+    description:
+      'Find all Cloud Flows that connect to external services, APIs, or connectors (e.g. "Power BI", "Dataverse", "Teams", "SQL Server", "HTTP") and filter by premium licensing status.',
+    parameters: z.object({
+      connector_filter: z
+        .string()
+        .optional()
+        .describe('Connector name or keyword to search for, e.g. "Power BI", "Dataverse", "HTTP", "SharePoint"'),
+      is_premium: z
+        .boolean()
+        .optional()
+        .describe('Optional flag to filter only premium connectors (true) or standard connectors (false)'),
+      projectId: z
+        .string()
+        .optional()
+        .describe('Optional solution/project ID'),
+    }),
+    execute: async ({ connector_filter, is_premium, projectId }, runContext) => {
+      const context = runContext?.context as AgentExecutionContext | undefined;
+      const targetProjectId = projectId || context?.projectId;
+
+      const { stepId, startTime } = startStep(
+        context,
+        'query_flow_integrations',
+        `Querying flow integrations for connector "${connector_filter || 'all'}"`,
+        { connector_filter, is_premium, projectId: targetProjectId }
+      );
+
+      try {
+        const rows = await queryFlowIntegrations(targetProjectId, connector_filter, is_premium);
+
+        if (rows.length === 0) {
+          finishStep(context, stepId, startTime, '0 integrations found');
+          return `No flow integrations found matching connector "${connector_filter || 'any'}".`;
+        }
+
+        // Group by flow
+        const flowMap = new Map<string, Array<{ action: string; connector: string; is_premium: boolean; op: string }>>();
+        for (const r of rows) {
+          if (!flowMap.has(r.flow_name)) flowMap.set(r.flow_name, []);
+          flowMap.get(r.flow_name)!.push({
+            action: r.action_name,
+            connector: r.connector_name,
+            is_premium: r.is_premium,
+            op: r.operation_id || 'Action',
+          });
+        }
+
+        const formatted = Array.from(flowMap.entries()).map(([flowName, actions]) => ({
+          flow_name: flowName,
+          total_connector_actions: actions.length,
+          actions,
+        }));
+
+        finishStep(
+          context,
+          stepId,
+          startTime,
+          `Found ${rows.length} connector actions across ${formatted.length} flows`
+        );
+
+        return JSON.stringify(formatted, null, 2);
+      } catch (err: any) {
+        finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
+        return `Error querying flow integrations: ${err?.message || err}`;
+      }
+    },
+  });
+}
+
+export function createAuditWebResourcesTool() {
+  return tool({
+    name: 'audit_web_resources',
+    description:
+      'Audit client-side Web Resources (JavaScript, HTML, CSS) in the solution for modernization health (deprecated Xrm.Page APIs, unsupported direct DOM manipulation) and inspect registered form event handlers.',
+    parameters: z.object({
+      audit_type: z
+        .enum(['all', 'deprecated_xrm', 'direct_dom', 'event_handlers'])
+        .optional()
+        .default('all')
+        .describe('Type of audit to execute'),
+      projectId: z
+        .string()
+        .optional()
+        .describe('Optional solution/project ID'),
+    }),
+    execute: async ({ audit_type = 'all', projectId }, runContext) => {
+      const context = runContext?.context as AgentExecutionContext | undefined;
+      const targetProjectId = projectId || context?.projectId;
+
+      const { stepId, startTime } = startStep(
+        context,
+        'audit_web_resources',
+        `Auditing Web Resources (${audit_type})`,
+        { audit_type, projectId: targetProjectId }
+      );
+
+      try {
+        const deprecatedOnly = audit_type === 'deprecated_xrm' || audit_type === 'direct_dom';
+        const webRes = await queryWebResources(targetProjectId, undefined, deprecatedOnly);
+        const formEvents = await queryFormEventHandlers(targetProjectId);
+
+        let filteredRes = webRes;
+        if (audit_type === 'deprecated_xrm') {
+          filteredRes = webRes.filter((w) => w.uses_deprecated_xrm);
+        } else if (audit_type === 'direct_dom') {
+          filteredRes = webRes.filter((w) => w.uses_direct_dom);
+        }
+
+        const result = {
+          audit_type,
+          web_resources_count: filteredRes.length,
+          web_resources: filteredRes.map((w) => ({
+            name: w.name,
+            type: w.resource_type,
+            size_bytes: w.file_size_bytes,
+            uses_deprecated_xrm: w.uses_deprecated_xrm,
+            uses_direct_dom: w.uses_direct_dom,
+            detected_functions: w.detected_functions || [],
+          })),
+          form_event_handlers_count: formEvents.length,
+          form_event_handlers: formEvents.map((f) => ({
+            entity: f.entity_name,
+            form: f.form_name,
+            event: f.event_type,
+            target_field: f.target_field || null,
+            library: f.library_name,
+            function: f.function_name,
+            pass_execution_context: f.pass_execution_context,
+          })),
+        };
+
+        finishStep(
+          context,
+          stepId,
+          startTime,
+          `Audited ${filteredRes.length} web resources and ${formEvents.length} event handlers`
+        );
+
+        return JSON.stringify(result, null, 2);
+      } catch (err: any) {
+        finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
+        return `Error auditing web resources: ${err?.message || err}`;
+      }
+    },
+  });
+}
+
+export function createAuditHardcodedLiteralsTool() {
+  return tool({
+    name: 'audit_hardcoded_literals',
+    description:
+      'Audit hardcoded environment-specific literals (GUIDs, URLs, emails) across Cloud Flows, Canvas Apps, and JavaScript scripts to ensure ALM readiness and portability between Dev, Test, and Prod environments.',
+    parameters: z.object({
+      literal_type: z
+        .enum(['ALL', 'GUID', 'URL', 'EMAIL'])
+        .optional()
+        .default('ALL')
+        .describe('Type of literal to audit'),
+      projectId: z
+        .string()
+        .optional()
+        .describe('Optional solution/project ID'),
+    }),
+    execute: async ({ literal_type = 'ALL', projectId }, runContext) => {
+      const context = runContext?.context as AgentExecutionContext | undefined;
+      const targetProjectId = projectId || context?.projectId;
+
+      const { stepId, startTime } = startStep(
+        context,
+        'audit_hardcoded_literals',
+        `Auditing hardcoded literals (${literal_type})`,
+        { literal_type, projectId: targetProjectId }
+      );
+
+      try {
+        const typeFilter = literal_type === 'ALL' ? undefined : literal_type;
+        const rows = await queryHardcodedLiterals(targetProjectId, typeFilter);
+
+        const result = {
+          literal_type,
+          total_count: rows.length,
+          literals: rows.map((r) => ({
+            component_type: r.component_type,
+            component_name: r.component_name,
+            type: r.literal_type,
+            value: r.value,
+            code_context: r.code_context,
+          })),
+        };
+
+        finishStep(context, stepId, startTime, `Found ${rows.length} hardcoded literals`);
+        return JSON.stringify(result, null, 2);
+      } catch (err: any) {
+        finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
+        return `Error auditing hardcoded literals: ${err?.message || err}`;
+      }
+    },
+  });
+}
+
 export function getAllAgentTools() {
   return [
+    createAnalyzeColumnImpactTool(),
+    createAnalyzeValidationImpactTool(),
+    createQueryFlowIntegrationsTool(),
+    createAuditWebResourcesTool(),
+    createAuditHardcodedLiteralsTool(),
     createSemanticSearchTool(),
     createListDocumentsTool(),
     createReadDocumentMarkdownTool(),

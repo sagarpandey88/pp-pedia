@@ -13,6 +13,7 @@ import {
   Archive,
   FileText,
   FileCode,
+  Code,
 } from 'lucide-react';
 import { ProjectRecord } from '../../types/db';
 import { UploadZone } from './UploadZone';
@@ -151,6 +152,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <Sliders className="w-3.5 h-3.5 text-amber-400" />
                         <span>{proj.stats.env_var_count} Vars</span>
                       </div>
+                      {((proj.stats.web_resource_count ?? 0) > 0 || (proj.ast_json?.web_resources?.length ?? 0) > 0) && (
+                        <div className="col-span-2 flex items-center gap-1.5 text-xs text-slate-300 bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-850">
+                          <Code className="w-3.5 h-3.5 text-teal-400" />
+                          <span>{proj.stats.web_resource_count ?? proj.ast_json?.web_resources?.length ?? 0} Web Resources / Scripts</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 

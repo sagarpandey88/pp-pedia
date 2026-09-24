@@ -124,7 +124,12 @@ export function App() {
       });
 
       const projectId = `proj_${ast.solution.unique_name.toLowerCase()}_${Date.now()}`;
-      updateStepStatus('unpack', 'completed', `Parsed ${ast.entities.length} tables, ${ast.flows.length} flows`);
+      const wrCount = ast.web_resources?.length || 0;
+      updateStepStatus(
+        'unpack',
+        'completed',
+        `Parsed ${ast.entities.length} tables, ${ast.flows.length} flows${wrCount > 0 ? `, ${wrCount} web resources` : ''}`
+      );
 
       // Step 2: Generate Docs
       updateStepStatus('docs', 'in_progress');
@@ -206,7 +211,12 @@ export function App() {
       }));
 
       await saveFullProjectIngestion(projectRecord, generatedDocs, chunkRecords);
-      updateStepStatus('db', 'completed', 'Saved project, docs, and vectors');
+      const depCount = ast.dependencies?.length || 0;
+      updateStepStatus(
+        'db',
+        'completed',
+        `Saved project, docs, vectors, and ${depCount} relational dependencies`
+      );
 
       setIngestionProgress(100);
       setIngestionStatusText('Ingestion complete!');

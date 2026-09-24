@@ -13,7 +13,51 @@ import {
   CanvasApp,
   EnvironmentVariable,
   SiteMap,
+  WebResource,
+  WebResourceType,
+  FormEventHandler,
+  ComponentDependency,
+  FlowIntegration,
+  FlowTriggerDetail,
+  HardcodedLiteral,
 } from '../../types/solution';
+import { analyzeJavaScript } from './jsAnalyzer';
+import {
+  extractFlowDependencies,
+  extractCanvasAppDependencies,
+  correlateFormEventDependencies,
+} from './dependencyExtractor';
+
+export function mapWebResourceType(typeCode: number): WebResourceType {
+  switch (typeCode) {
+    case 1:
+      return 'HTML';
+    case 2:
+      return 'CSS';
+    case 3:
+      return 'JavaScript';
+    case 4:
+      return 'XML';
+    case 5:
+      return 'PNG';
+    case 6:
+      return 'JPG';
+    case 7:
+      return 'GIF';
+    case 8:
+      return 'XAP';
+    case 9:
+      return 'XSL';
+    case 10:
+      return 'ICO';
+    case 11:
+      return 'SVG';
+    case 12:
+      return 'RESX';
+    default:
+      return 'Unknown';
+  }
+}
 
 // Helper to get text from XML element or return default
 function getElementText(parent: Element | Document, tagName: string, defaultValue = ''): string {
@@ -80,12 +124,23 @@ export function parseCustomizationsXml(xmlText: string): {
   optionSets: OptionSet[];
   siteMap?: SiteMap;
   workflowNames: Map<string, string>;
+  webResourceCatalog: Array<{
+    id: string;
+    name: string;
+    displayName?: string;
+    description?: string;
+    type: WebResourceType;
+    typeCode: number;
+    fileName?: string;
+  }>;
+  formEventHandlers: FormEventHandler[];
 } {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
 
   const entities: DataverseEntity[] = [];
   const optionSets: OptionSet[] = [];
+  const formEventHandlers: FormEventHandler[] = [];
 
   // Parse Global Option Sets
   const globalOptionSetEls = doc.querySelectorAll('OptionSets > OptionSet');
@@ -238,6 +293,58 @@ export function parseCustomizationsXml(xmlText: string): {
       });
     }
 
+    // Form Event Handlers inside Entity
+    const formEls = entityEl.querySelectorAll('forms > systemform, forms > form, formXml, form');
+    for (let f = 0; f < formEls.length; f++) {
+      const formEl = formEls[f];
+      const formId =
+        formEl.getAttribute('id') ||
+        formEl.getAttribute('systemformid') ||
+        formEl.querySelector('systemformid')?.textContent?.trim() ||
+        `form_${f}`;
+      const formName =
+        getLocalizedDescription(formEl, 'LocalizedNames', '') ||
+        formEl.getAttribute('name') ||
+        formEl.querySelector('name')?.textContent?.trim() ||
+        'Main Form';
+
+      const eventEls = formEl.querySelectorAll('events > event');
+      for (let ev = 0; ev < eventEls.length; ev++) {
+        const eventEl = eventEls[ev];
+        const rawEvName = eventEl.getAttribute('name')?.toLowerCase() || 'onload';
+        let eventType: FormEventHandler['event_type'] = 'OnLoad';
+        if (rawEvName === 'onsave') eventType = 'OnSave';
+        else if (rawEvName === 'onchange') eventType = 'OnChange';
+        else if (rawEvName === 'tabstatechange') eventType = 'TabStateChange';
+
+        const targetField = eventEl.getAttribute('attribute') || undefined;
+
+        const handlerEls = eventEl.querySelectorAll('Handlers > Handler');
+        for (let h = 0; h < handlerEls.length; h++) {
+          const hEl = handlerEls[h];
+          const funcName = hEl.getAttribute('functionName') || '';
+          const libName = hEl.getAttribute('libraryName') || '';
+          const passCtx = hEl.getAttribute('passExecutionContext') === 'true';
+          const isEnabled = hEl.getAttribute('enabled') !== 'false';
+
+          if (funcName && libName) {
+            formEventHandlers.push({
+              id: `feh_${logicalName}_${formId}_${formEventHandlers.length}`,
+              entity_name: logicalName,
+              form_id: formId,
+              form_name: formName,
+              event_type: eventType,
+              target_field: targetField?.toLowerCase(),
+              library_name: libName,
+              function_name: funcName,
+              pass_execution_context: passCtx,
+              enabled: isEnabled,
+            });
+          }
+        }
+      }
+    }
+
     entities.push({
       logical_name: logicalName,
       schema_name: entityEl.getAttribute('Name') || logicalName,
@@ -311,7 +418,42 @@ export function parseCustomizationsXml(xmlText: string): {
     }
   }
 
-  return { entities, optionSets, siteMap, workflowNames };
+  // Parse Web Resources defined in customizations.xml
+  const webResourceCatalog: Array<{
+    id: string;
+    name: string;
+    displayName?: string;
+    description?: string;
+    type: WebResourceType;
+    typeCode: number;
+    fileName?: string;
+  }> = [];
+
+  const wrEls = doc.querySelectorAll('WebResources > WebResource');
+  for (let i = 0; i < wrEls.length; i++) {
+    const wr = wrEls[i];
+    const id = getElementText(wr, 'WebResourceId') || `wr_${i}`;
+    const name = getElementText(wr, 'Name') || `WebResource_${i}`;
+    const displayName =
+      getLocalizedDescription(wr, 'LocalizedNames', '') ||
+      getElementText(wr, 'DisplayName') ||
+      name;
+    const description = getLocalizedDescription(wr, 'Descriptions', '');
+    const typeCode = parseInt(getElementText(wr, 'WebResourceType', '3'), 10);
+    const fileName = getElementText(wr, 'FileName') || `/WebResources/${name}`;
+
+    webResourceCatalog.push({
+      id,
+      name,
+      displayName,
+      description,
+      type: mapWebResourceType(typeCode),
+      typeCode,
+      fileName,
+    });
+  }
+
+  return { entities, optionSets, siteMap, workflowNames, webResourceCatalog, formEventHandlers };
 }
 
 /**
@@ -600,6 +742,19 @@ export async function unpackAndParseSolution(
     optionSets = parsedCustomizations.optionSets;
     siteMap = parsedCustomizations.siteMap;
     workflowNames = parsedCustomizations.workflowNames;
+    var webResourceCatalog = parsedCustomizations.webResourceCatalog;
+    var formEventHandlers = parsedCustomizations.formEventHandlers;
+  } else {
+    var webResourceCatalog: Array<{
+      id: string;
+      name: string;
+      displayName?: string;
+      description?: string;
+      type: WebResourceType;
+      typeCode: number;
+      fileName?: string;
+    }> = [];
+    var formEventHandlers: FormEventHandler[] = [];
   }
 
   // 3. Workflows (Cloud Flows)
@@ -651,11 +806,144 @@ export async function unpackAndParseSolution(
     envVars = parseEnvironmentVariables(envText);
   }
 
+  // 6. Web Resources & Client Scripts
+  onProgress?.('Extracting and analyzing Web Resources...');
+  const webResources: WebResource[] = [];
+  const jsDependencies: ComponentDependency[] = [];
+  const jsLiterals: HardcodedLiteral[] = [];
+
+  const wrCatalogMap = new Map(webResourceCatalog.map((c) => [c.name.toLowerCase(), c]));
+  const allZipFiles = Object.keys(zip.files);
+  const wrFilePaths = allZipFiles.filter((f) => {
+    const lower = f.toLowerCase();
+    return (
+      lower.startsWith('webresources/') ||
+      wrCatalogMap.has(f.toLowerCase()) ||
+      lower.endsWith('.js') ||
+      lower.endsWith('.html') ||
+      lower.endsWith('.css')
+    );
+  });
+
+  const processedNames = new Set<string>();
+
+  for (const wrPath of wrFilePaths) {
+    const file = zip.file(wrPath);
+    if (!file || file.dir) continue;
+
+    const baseName = wrPath.replace(/^WebResources\//i, '');
+    const cleanKey = baseName.toLowerCase();
+    processedNames.add(cleanKey);
+
+    const catalogEntry = wrCatalogMap.get(cleanKey);
+    let type: WebResourceType = catalogEntry?.type || 'Unknown';
+    let typeCode = catalogEntry?.typeCode ?? 3;
+
+    if (type === 'Unknown') {
+      if (baseName.endsWith('.js')) {
+        type = 'JavaScript';
+        typeCode = 3;
+      } else if (baseName.endsWith('.html') || baseName.endsWith('.htm')) {
+        type = 'HTML';
+        typeCode = 1;
+      } else if (baseName.endsWith('.css')) {
+        type = 'CSS';
+        typeCode = 2;
+      } else if (baseName.endsWith('.xml')) {
+        type = 'XML';
+        typeCode = 4;
+      } else if (baseName.endsWith('.svg')) {
+        type = 'SVG';
+        typeCode = 11;
+      } else if (baseName.endsWith('.resx')) {
+        type = 'RESX';
+        typeCode = 12;
+      }
+    }
+
+    let textContent: string | undefined;
+    const isTextFormat = ['JavaScript', 'HTML', 'CSS', 'XML', 'SVG', 'RESX'].includes(type);
+
+    if (isTextFormat) {
+      try {
+        textContent = await file.async('text');
+      } catch {
+        // ignore decode error
+      }
+    }
+
+    let detectedFunctions: string[] | undefined;
+    let usesDeprecatedXrm = false;
+    let usesDirectDom = false;
+
+    if (type === 'JavaScript' && textContent) {
+      const jsResult = analyzeJavaScript(baseName, textContent);
+      detectedFunctions = jsResult.detectedFunctions;
+      usesDeprecatedXrm = jsResult.usesDeprecatedXrm;
+      usesDirectDom = jsResult.usesDirectDom;
+      jsDependencies.push(...jsResult.dependencies);
+      jsLiterals.push(...jsResult.hardcodedLiterals);
+    }
+
+    const bytes = await file.async('uint8array');
+
+    webResources.push({
+      id: catalogEntry?.id || `wr_${baseName}`,
+      name: baseName,
+      display_name: catalogEntry?.displayName || baseName,
+      description: catalogEntry?.description,
+      type,
+      type_code: typeCode,
+      file_path: wrPath,
+      content_text: textContent,
+      file_size_bytes: bytes.length,
+      detected_functions: detectedFunctions,
+      uses_deprecated_xrm: usesDeprecatedXrm,
+      uses_direct_dom: usesDirectDom,
+    });
+  }
+
+  // Also include catalog entries that weren't in physical zip
+  for (const cat of webResourceCatalog) {
+    if (!processedNames.has(cat.name.toLowerCase())) {
+      webResources.push({
+        id: cat.id,
+        name: cat.name,
+        display_name: cat.displayName || cat.name,
+        description: cat.description,
+        type: cat.type,
+        type_code: cat.typeCode,
+        file_path: cat.fileName,
+        file_size_bytes: 0,
+      });
+    }
+  }
+
+  // 7. Extract Inverted Dependencies, Integrations, Triggers, and Literals
+  onProgress?.('Extracting inverted dependencies and connector integrations...');
+  const flowData = extractFlowDependencies(flows);
+  const canvasData = extractCanvasAppDependencies(canvasApps);
+  const correlatedJsDeps = correlateFormEventDependencies(formEventHandlers, jsDependencies);
+
+  const allDependencies: ComponentDependency[] = [
+    ...flowData.dependencies,
+    ...canvasData.dependencies,
+    ...correlatedJsDeps,
+  ];
+
+  const allLiterals: HardcodedLiteral[] = [
+    ...flowData.hardcodedLiterals,
+    ...canvasData.hardcodedLiterals,
+    ...jsLiterals,
+  ];
+
   // Calculate statistics
   let relationshipCount = 0;
   for (const e of entities) {
     relationshipCount += e.relationships.length;
   }
+
+  const scriptCount = webResources.filter((w) => w.type === 'JavaScript').length;
 
   const ast: SolutionAST = {
     solution: solutionMetadata,
@@ -665,6 +953,12 @@ export async function unpackAndParseSolution(
     canvas_apps: canvasApps,
     environment_variables: envVars,
     site_map: siteMap,
+    web_resources: webResources,
+    form_event_handlers: formEventHandlers,
+    dependencies: allDependencies,
+    flow_integrations: flowData.integrations,
+    flow_triggers: flowData.triggers,
+    hardcoded_literals: allLiterals,
     stats: {
       entity_count: entities.length,
       flow_count: flows.length,
@@ -672,6 +966,9 @@ export async function unpackAndParseSolution(
       env_var_count: envVars.length,
       relationship_count: relationshipCount,
       option_set_count: optionSets.length,
+      web_resource_count: webResources.length,
+      script_count: scriptCount,
+      dependency_count: allDependencies.length,
     },
   };
 

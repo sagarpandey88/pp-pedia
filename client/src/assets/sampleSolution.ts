@@ -270,6 +270,16 @@ export async function createSampleSolutionZip(): Promise<Blob> {
       </options>
     </OptionSet>
   </OptionSets>
+  <WebResources>
+    <WebResource>
+      <WebResourceId>{a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d}</WebResourceId>
+      <Name>contoso_ticket_validation.js</Name>
+      <DisplayName>Ticket Form Validation Scripts</DisplayName>
+      <Description>Enforces SLA deadlines, validates priority changes, and checks customer account balance.</Description>
+      <WebResourceType>3</WebResourceType>
+      <FileName>/WebResources/contoso_ticket_validation.js</FileName>
+    </WebResource>
+  </WebResources>
   <AppModuleSiteMap>
     <SiteMap>
       <Area Id="SupportArea" Title="Customer Support">
@@ -283,6 +293,48 @@ export async function createSampleSolutionZip(): Promise<Blob> {
   </AppModuleSiteMap>
 </ImportExportXml>`;
   zip.file('customizations.xml', customizationsXml);
+
+  // 2.5 WebResources/contoso_ticket_validation.js
+  const scriptContent = `// Contoso Ticket Form Validation Scripts
+var Contoso = window.Contoso || {};
+Contoso.Ticket = {
+  onLoad: function (executionContext) {
+    var formContext = executionContext.getFormContext();
+    var title = formContext.getAttribute("contoso_title").getValue();
+    console.log("Ticket loaded: " + title);
+
+    // Modernization check: legacy API usage
+    if (typeof Xrm !== "undefined" && Xrm.Page) {
+      console.warn("Using legacy Xrm.Page context");
+    }
+  },
+
+  onPriorityChange: function (executionContext) {
+    var formContext = executionContext.getFormContext();
+    var priority = formContext.getAttribute("contoso_prioritycode").getValue();
+
+    // Field impact demo: setting resolution notes required
+    if (priority === 4) {
+      formContext.getAttribute("contoso_resolutionnotes").setRequiredLevel("required");
+    } else {
+      formContext.getAttribute("contoso_resolutionnotes").setRequiredLevel("none");
+    }
+  },
+
+  onSave: function (executionContext) {
+    var formContext = executionContext.getFormContext();
+    var status = formContext.getAttribute("contoso_statuscode").getValue();
+
+    if (status === 3) {
+      // Direct WebApi mutation
+      Xrm.WebApi.updateRecord("contoso_ticket", formContext.data.entity.getId(), {
+        contoso_resolutionnotes: "Resolved via ticket script automation"
+      });
+    }
+  }
+};
+`;
+  zip.file('WebResources/contoso_ticket_validation.js', scriptContent);
 
   // 3. Workflows/EscalateOverdueTickets.json
   const flowJson = {
@@ -364,6 +416,63 @@ export async function createSampleSolutionZip(): Promise<Blob> {
     },
   };
   zip.file('Workflows/EscalateOverdueTickets.json', JSON.stringify(flowJson, null, 2));
+
+  // 3.5 Workflows/SyncSupportMetricsToPowerBI.json
+  const powerBiFlowJson = {
+    properties: {
+      displayName: 'Sync Support Metrics to Power BI Dashboard',
+      state: 'Activated',
+      definition: {
+        $schema: 'https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#',
+        triggers: {
+          When_Ticket_Created_Or_Updated: {
+            type: 'OpenApiConnection',
+            inputs: {
+              host: { connectionName: 'shared_commondataserviceforapps' },
+              parameters: {
+                entityName: 'contoso_ticket',
+                filter: "contoso_prioritycode eq 4",
+              },
+            },
+          },
+        },
+        actions: {
+          Add_Rows_To_PowerBI_Dataset: {
+            type: 'OpenApiConnection',
+            inputs: {
+              host: {
+                apiId: '/providers/Microsoft.PowerApps/apis/shared_powerbi',
+                connectionName: 'shared_powerbi',
+                operationId: 'AddRowsToDataset',
+              },
+              parameters: {
+                groupId: 'me',
+                datasetId: '9b1deb4d-3b7d-4b69-9df3-7052e635da88',
+                table: 'DailyIncidentSLA',
+                rows: {
+                  TicketId: "@triggerOutputs()?['body/contoso_ticketid']",
+                  Title: "@triggerOutputs()?['body/contoso_title']",
+                  Priority: "@triggerOutputs()?['body/contoso_prioritycode']",
+                  Status: "@triggerOutputs()?['body/contoso_statuscode']",
+                },
+              },
+            },
+          },
+        },
+        connectionReferences: {
+          shared_powerbi: {
+            connection: { name: 'shared_powerbi' },
+            id: '/providers/Microsoft.PowerApps/apis/shared_powerbi',
+          },
+          shared_commondataserviceforapps: {
+            connection: { name: 'shared_commondataserviceforapps' },
+            id: '/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps',
+          },
+        },
+      },
+    },
+  };
+  zip.file('Workflows/SyncSupportMetricsToPowerBI.json', JSON.stringify(powerBiFlowJson, null, 2));
 
   // 4. CanvasApps/SupportDeskApp.msapp
   const msappZip = new JSZip();

@@ -153,6 +153,93 @@ export interface SiteMap {
   areas: SiteMapArea[];
 }
 
+export type WebResourceType =
+  | 'HTML'
+  | 'CSS'
+  | 'JavaScript'
+  | 'XML'
+  | 'PNG'
+  | 'JPG'
+  | 'GIF'
+  | 'XAP'
+  | 'XSL'
+  | 'ICO'
+  | 'SVG'
+  | 'RESX'
+  | 'Unknown';
+
+export interface WebResource {
+  id: string;
+  name: string;
+  display_name?: string;
+  description?: string;
+  type: WebResourceType;
+  type_code: number;
+  file_path?: string;
+  content_text?: string;
+  file_size_bytes: number;
+  detected_functions?: string[];
+  uses_deprecated_xrm?: boolean;
+  uses_direct_dom?: boolean;
+}
+
+export interface FormEventHandler {
+  id: string;
+  entity_name: string;
+  form_id?: string;
+  form_name: string;
+  event_type: 'OnLoad' | 'OnSave' | 'OnChange' | 'TabStateChange';
+  target_field?: string;
+  library_name: string;
+  function_name: string;
+  pass_execution_context: boolean;
+  enabled: boolean;
+}
+
+export interface ComponentDependency {
+  id: string;
+  source_type: 'flow' | 'canvas_app' | 'javascript' | 'relationship' | 'formula';
+  source_id: string;
+  source_name: string;
+  location_detail?: string;
+  target_entity: string;
+  target_field?: string;
+  operation_type: 'READ' | 'WRITE' | 'TRIGGER_FILTER' | 'LOOKUP' | 'DELETE';
+  context_snippet?: string;
+}
+
+export interface FlowIntegration {
+  id: string;
+  flow_id: string;
+  flow_name: string;
+  connector_id: string;
+  connector_name: string;
+  operation_id?: string;
+  action_name: string;
+  is_premium: boolean;
+}
+
+export interface FlowTriggerDetail {
+  id: string;
+  flow_id: string;
+  flow_name: string;
+  trigger_type: string;
+  table_name?: string;
+  change_type?: string;
+  filter_expression?: string;
+  has_filter: boolean;
+  select_columns?: string[];
+}
+
+export interface HardcodedLiteral {
+  id: string;
+  component_type: 'flow' | 'canvas_app' | 'javascript';
+  component_name: string;
+  literal_type: 'GUID' | 'URL' | 'EMAIL';
+  value: string;
+  code_context?: string;
+}
+
 export interface SolutionStats {
   entity_count: number;
   flow_count: number;
@@ -160,6 +247,9 @@ export interface SolutionStats {
   env_var_count: number;
   relationship_count: number;
   option_set_count: number;
+  web_resource_count?: number;
+  script_count?: number;
+  dependency_count?: number;
 }
 
 export interface SolutionAST {
@@ -170,6 +260,12 @@ export interface SolutionAST {
   canvas_apps: CanvasApp[];
   environment_variables: EnvironmentVariable[];
   site_map?: SiteMap;
+  web_resources?: WebResource[];
+  form_event_handlers?: FormEventHandler[];
+  dependencies?: ComponentDependency[];
+  flow_integrations?: FlowIntegration[];
+  flow_triggers?: FlowTriggerDetail[];
+  hardcoded_literals?: HardcodedLiteral[];
   stats: SolutionStats;
 }
 

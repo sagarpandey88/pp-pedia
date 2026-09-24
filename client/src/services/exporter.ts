@@ -46,6 +46,8 @@ export async function exportDocsAsZip(
       filePath = `canvas-apps/${doc.slug}.md`;
     } else if (doc.doc_type === 'env_vars') {
       filePath = 'configuration/environment-variables.md';
+    } else if (doc.doc_type === 'web_resources') {
+      filePath = 'web-resources/scripts.md';
     } else {
       filePath = `${doc.slug}.md`;
     }

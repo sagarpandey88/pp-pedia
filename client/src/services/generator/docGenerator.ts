@@ -814,6 +814,75 @@ ${ast.environment_variables
 `;
 }
 
+export function generateDeterministicWebResources(ast: SolutionAST): string {
+  const webRes = ast.web_resources || [];
+  const formEvents = ast.form_event_handlers || [];
+  const integrations = ast.flow_integrations || [];
+  const dependencies = ast.dependencies || [];
+
+  return `# Web Resources & Client Scripting
+
+Client-side Web Resources provide form automation, data validations, and user experience enhancements across Dataverse Model-Driven Apps and custom interfaces.
+
+---
+
+## 1. Web Resources Catalog
+
+| Name | Display Name | Type | Size | Modernization Health |
+| :--- | :--- | :--- | :--- | :--- |
+${webRes
+  .map((w) => {
+    let health = '✅ Clean';
+    if (w.uses_deprecated_xrm && w.uses_direct_dom) health = '🚨 Deprecated Xrm.Page & Direct DOM';
+    else if (w.uses_deprecated_xrm) health = '⚠️ Deprecated Xrm.Page';
+    else if (w.uses_direct_dom) health = '⚠️ Direct DOM Manipulation';
+    return `| \`${w.name}\` | **${w.display_name || w.name}** | \`${w.type}\` | ${w.file_size_bytes} B | ${health} |`;
+  })
+  .join('\n')}
+
+---
+
+## 2. Form Event Handlers
+
+The following JavaScript functions are registered on Dataverse form lifecycles (\`OnLoad\`, \`OnSave\`, \`OnChange\`):
+
+| Entity | Form Name | Event | Target Field | Script Library | Handler Function |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+${formEvents.length > 0
+  ? formEvents
+      .map(
+        (f) =>
+          `| \`${f.entity_name}\` | ${f.form_name} | \`${f.event_type}\` | ${f.target_field ? `\`${f.target_field}\`` : '-'} | \`${f.library_name}\` | \`${f.function_name}\` |`
+      )
+      .join('\n')
+  : '| - | - | - | - | - | - |\n*(No form event handlers registered)*'}
+
+---
+
+## 3. Connector Integrations & External Services
+
+Automated workflows and integrations in this solution connect to the following external APIs:
+
+| Flow Name | Connector | Operation | Action Name | License Tier |
+| :--- | :--- | :--- | :--- | :--- |
+${integrations.length > 0
+  ? integrations
+      .map(
+        (int) =>
+          `| **${int.flow_name}** | \`${int.connector_name}\` | \`${int.operation_id || '-'}\` | ${int.action_name} | ${int.is_premium ? '🌟 Premium' : 'Standard'} |`
+      )
+      .join('\n')
+  : '| - | - | - | - | - |\n*(No external connectors detected)*'}
+
+---
+
+## 4. Inverted Dependency Summary
+* Total Component Dependencies Indexed: **${dependencies.length}**
+* Total Web Resources: **${webRes.length}**
+* Total Form Event Bindings: **${formEvents.length}**
+`;
+}
+
 export interface DocGeneratorOptions {
   concurrency?: number;
 }
@@ -1004,6 +1073,24 @@ export async function generateDocumentationSuite(
           title: 'Environment Variables & Config',
           slug: 'environment-variables',
           content_markdown: envVarsContent,
+        };
+      },
+    });
+  }
+
+  // Step 6: Web Resources & Client Scripting
+  if (ast.web_resources && ast.web_resources.length > 0) {
+    tasks.push({
+      label: 'Documenting Web Resources & Client Scripting...',
+      fn: async (): Promise<DocumentRecord> => {
+        const webResContent = generateDeterministicWebResources(ast);
+        return {
+          id: `${projectId}_web_resources`,
+          project_id: projectId,
+          doc_type: 'web_resources',
+          title: 'Web Resources & Client Scripting',
+          slug: 'web-resources',
+          content_markdown: webResContent,
         };
       },
     });

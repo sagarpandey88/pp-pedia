@@ -6,7 +6,126 @@ import {
   ChunkRecord,
   SimilarityResult,
   DatabaseStats,
+  WebResourceRecord,
+  FormEventHandlerRecord,
+  ComponentDependencyRecord,
+  FlowIntegrationRecord,
+  FlowTriggerRecord,
+  HardcodedLiteralRecord,
 } from '../types/db';
+import {
+  WebResource,
+  FormEventHandler,
+  ComponentDependency,
+  FlowIntegration,
+  FlowTriggerDetail,
+  HardcodedLiteral,
+  DataverseEntity,
+} from '../types/solution';
+
+const SCHEMA_EXTENSIONS_DDL = `
+  CREATE TABLE IF NOT EXISTS web_resources (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    display_name TEXT,
+    resource_type TEXT NOT NULL,
+    description TEXT,
+    file_size_bytes INTEGER DEFAULT 0,
+    content_text TEXT,
+    detected_functions JSONB,
+    uses_deprecated_xrm BOOLEAN DEFAULT false,
+    uses_direct_dom BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_webres_project ON web_resources(project_id, name);
+
+  CREATE TABLE IF NOT EXISTS form_event_handlers (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    entity_name TEXT NOT NULL,
+    form_id TEXT,
+    form_name TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    target_field TEXT,
+    library_name TEXT NOT NULL,
+    function_name TEXT NOT NULL,
+    pass_execution_context BOOLEAN DEFAULT false,
+    enabled BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_form_events_entity ON form_event_handlers(project_id, entity_name, target_field);
+
+  CREATE TABLE IF NOT EXISTS component_dependencies (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    location_detail TEXT,
+    target_entity TEXT NOT NULL,
+    target_field TEXT,
+    operation_type TEXT NOT NULL,
+    context_snippet TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_deps_target ON component_dependencies(project_id, target_entity, target_field);
+  CREATE INDEX IF NOT EXISTS idx_deps_source ON component_dependencies(project_id, source_type);
+
+  CREATE TABLE IF NOT EXISTS flow_integrations (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    flow_id TEXT NOT NULL,
+    flow_name TEXT NOT NULL,
+    connector_id TEXT NOT NULL,
+    connector_name TEXT NOT NULL,
+    operation_id TEXT,
+    action_name TEXT NOT NULL,
+    is_premium BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_flow_integrations ON flow_integrations(project_id, connector_name);
+
+  CREATE TABLE IF NOT EXISTS flow_triggers (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    flow_id TEXT NOT NULL,
+    flow_name TEXT NOT NULL,
+    trigger_type TEXT NOT NULL,
+    table_name TEXT,
+    change_type TEXT,
+    filter_expression TEXT,
+    has_filter BOOLEAN NOT NULL DEFAULT false,
+    select_columns JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_flow_triggers ON flow_triggers(project_id, table_name);
+
+  CREATE TABLE IF NOT EXISTS hardcoded_literals (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    component_type TEXT NOT NULL,
+    component_name TEXT NOT NULL,
+    literal_type TEXT NOT NULL,
+    value TEXT NOT NULL,
+    code_context TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_hardcoded_literals ON hardcoded_literals(project_id, literal_type);
+
+  CREATE TABLE IF NOT EXISTS entity_relationships_flat (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    relationship_type TEXT NOT NULL,
+    primary_entity TEXT NOT NULL,
+    referencing_entity TEXT NOT NULL,
+    referencing_attribute TEXT,
+    cascade_delete TEXT,
+    cascade_assign TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_relationships_flat ON entity_relationships_flat(project_id, primary_entity, referencing_entity);
+`;
 
 let dbInstance: PGlite | null = null;
 let initPromise: Promise<PGlite> | null = null;
@@ -138,6 +257,9 @@ export async function getDb(): Promise<PGlite> {
         // GIN index on expression is best-effort
       }
 
+      // Execute schema extensions DDL for auxiliary relational tables
+      await db.exec(SCHEMA_EXTENSIONS_DDL);
+
       dbInstance = db;
       return db;
     } catch (err) {
@@ -183,12 +305,375 @@ export async function getDb(): Promise<PGlite> {
         );
       `);
 
+      // Also execute schema extensions in fallback DB
+      await fallbackDb.exec(SCHEMA_EXTENSIONS_DDL);
+
       dbInstance = fallbackDb;
       return fallbackDb;
     }
   })();
 
   return initPromise;
+}
+
+async function insertWebResourcesTx(
+  tx: Transaction,
+  projectId: string,
+  resources: WebResource[],
+  batchSize = 50
+): Promise<void> {
+  for (let i = 0; i < resources.length; i += batchSize) {
+    const batch = resources.slice(i, i + batchSize);
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+
+    batch.forEach((r, idx) => {
+      const offset = idx * 11;
+      values.push(
+        r.id || `wr_${projectId}_${i + idx}`,
+        projectId,
+        r.name,
+        r.display_name || null,
+        r.type || 'Unknown',
+        r.description || null,
+        r.file_size_bytes || 0,
+        r.content_text || null,
+        r.detected_functions ? JSON.stringify(r.detected_functions) : null,
+        Boolean(r.uses_deprecated_xrm),
+        Boolean(r.uses_direct_dom)
+      );
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11})`
+      );
+    });
+
+    await tx.query(
+      `
+      INSERT INTO web_resources (
+        id, project_id, name, display_name, resource_type, description, file_size_bytes, content_text, detected_functions, uses_deprecated_xrm, uses_direct_dom
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        display_name = EXCLUDED.display_name,
+        resource_type = EXCLUDED.resource_type,
+        description = EXCLUDED.description,
+        file_size_bytes = EXCLUDED.file_size_bytes,
+        content_text = EXCLUDED.content_text,
+        detected_functions = EXCLUDED.detected_functions,
+        uses_deprecated_xrm = EXCLUDED.uses_deprecated_xrm,
+        uses_direct_dom = EXCLUDED.uses_direct_dom;
+    `,
+      values
+    );
+  }
+}
+
+async function insertFormEventHandlersTx(
+  tx: Transaction,
+  projectId: string,
+  handlers: FormEventHandler[],
+  batchSize = 50
+): Promise<void> {
+  for (let i = 0; i < handlers.length; i += batchSize) {
+    const batch = handlers.slice(i, i + batchSize);
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+
+    batch.forEach((h, idx) => {
+      const offset = idx * 11;
+      values.push(
+        h.id || `feh_${projectId}_${i + idx}`,
+        projectId,
+        h.entity_name,
+        h.form_id || null,
+        h.form_name,
+        h.event_type,
+        h.target_field || null,
+        h.library_name,
+        h.function_name,
+        Boolean(h.pass_execution_context),
+        Boolean(h.enabled)
+      );
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11})`
+      );
+    });
+
+    await tx.query(
+      `
+      INSERT INTO form_event_handlers (
+        id, project_id, entity_name, form_id, form_name, event_type, target_field, library_name, function_name, pass_execution_context, enabled
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (id) DO UPDATE SET
+        entity_name = EXCLUDED.entity_name,
+        form_name = EXCLUDED.form_name,
+        event_type = EXCLUDED.event_type,
+        target_field = EXCLUDED.target_field,
+        library_name = EXCLUDED.library_name,
+        function_name = EXCLUDED.function_name,
+        pass_execution_context = EXCLUDED.pass_execution_context,
+        enabled = EXCLUDED.enabled;
+    `,
+      values
+    );
+  }
+}
+
+async function insertComponentDependenciesTx(
+  tx: Transaction,
+  projectId: string,
+  deps: ComponentDependency[],
+  batchSize = 50
+): Promise<void> {
+  for (let i = 0; i < deps.length; i += batchSize) {
+    const batch = deps.slice(i, i + batchSize);
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+
+    batch.forEach((d, idx) => {
+      const offset = idx * 10;
+      values.push(
+        d.id || `dep_${projectId}_${i + idx}`,
+        projectId,
+        d.source_type,
+        d.source_id,
+        d.source_name,
+        d.location_detail || null,
+        d.target_entity,
+        d.target_field || null,
+        d.operation_type,
+        d.context_snippet || null
+      );
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10})`
+      );
+    });
+
+    await tx.query(
+      `
+      INSERT INTO component_dependencies (
+        id, project_id, source_type, source_id, source_name, location_detail, target_entity, target_field, operation_type, context_snippet
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (id) DO UPDATE SET
+        source_name = EXCLUDED.source_name,
+        location_detail = EXCLUDED.location_detail,
+        target_entity = EXCLUDED.target_entity,
+        target_field = EXCLUDED.target_field,
+        operation_type = EXCLUDED.operation_type,
+        context_snippet = EXCLUDED.context_snippet;
+    `,
+      values
+    );
+  }
+}
+
+async function insertFlowIntegrationsTx(
+  tx: Transaction,
+  projectId: string,
+  integrations: FlowIntegration[],
+  batchSize = 50
+): Promise<void> {
+  for (let i = 0; i < integrations.length; i += batchSize) {
+    const batch = integrations.slice(i, i + batchSize);
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+
+    batch.forEach((int, idx) => {
+      const offset = idx * 9;
+      values.push(
+        int.id || `int_${projectId}_${i + idx}`,
+        projectId,
+        int.flow_id,
+        int.flow_name,
+        int.connector_id,
+        int.connector_name,
+        int.operation_id || null,
+        int.action_name,
+        Boolean(int.is_premium)
+      );
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9})`
+      );
+    });
+
+    await tx.query(
+      `
+      INSERT INTO flow_integrations (
+        id, project_id, flow_id, flow_name, connector_id, connector_name, operation_id, action_name, is_premium
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (id) DO UPDATE SET
+        flow_name = EXCLUDED.flow_name,
+        connector_id = EXCLUDED.connector_id,
+        connector_name = EXCLUDED.connector_name,
+        operation_id = EXCLUDED.operation_id,
+        action_name = EXCLUDED.action_name,
+        is_premium = EXCLUDED.is_premium;
+    `,
+      values
+    );
+  }
+}
+
+async function insertFlowTriggersTx(
+  tx: Transaction,
+  projectId: string,
+  triggers: FlowTriggerDetail[],
+  batchSize = 50
+): Promise<void> {
+  for (let i = 0; i < triggers.length; i += batchSize) {
+    const batch = triggers.slice(i, i + batchSize);
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+
+    batch.forEach((trig, idx) => {
+      const offset = idx * 10;
+      values.push(
+        trig.id || `trig_${projectId}_${i + idx}`,
+        projectId,
+        trig.flow_id,
+        trig.flow_name,
+        trig.trigger_type,
+        trig.table_name || null,
+        trig.change_type || null,
+        trig.filter_expression || null,
+        Boolean(trig.has_filter),
+        trig.select_columns ? JSON.stringify(trig.select_columns) : null
+      );
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10})`
+      );
+    });
+
+    await tx.query(
+      `
+      INSERT INTO flow_triggers (
+        id, project_id, flow_id, flow_name, trigger_type, table_name, change_type, filter_expression, has_filter, select_columns
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (id) DO UPDATE SET
+        flow_name = EXCLUDED.flow_name,
+        trigger_type = EXCLUDED.trigger_type,
+        table_name = EXCLUDED.table_name,
+        change_type = EXCLUDED.change_type,
+        filter_expression = EXCLUDED.filter_expression,
+        has_filter = EXCLUDED.has_filter,
+        select_columns = EXCLUDED.select_columns;
+    `,
+      values
+    );
+  }
+}
+
+async function insertHardcodedLiteralsTx(
+  tx: Transaction,
+  projectId: string,
+  literals: HardcodedLiteral[],
+  batchSize = 50
+): Promise<void> {
+  for (let i = 0; i < literals.length; i += batchSize) {
+    const batch = literals.slice(i, i + batchSize);
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+
+    batch.forEach((lit, idx) => {
+      const offset = idx * 7;
+      values.push(
+        lit.id || `lit_${projectId}_${i + idx}`,
+        projectId,
+        lit.component_type,
+        lit.component_name,
+        lit.literal_type,
+        lit.value,
+        lit.code_context || null
+      );
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7})`
+      );
+    });
+
+    await tx.query(
+      `
+      INSERT INTO hardcoded_literals (
+        id, project_id, component_type, component_name, literal_type, value, code_context
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (id) DO UPDATE SET
+        component_name = EXCLUDED.component_name,
+        literal_type = EXCLUDED.literal_type,
+        value = EXCLUDED.value,
+        code_context = EXCLUDED.code_context;
+    `,
+      values
+    );
+  }
+}
+
+async function insertFlattenedRelationshipsTx(
+  tx: Transaction,
+  projectId: string,
+  entities: DataverseEntity[],
+  batchSize = 50
+): Promise<void> {
+  const flattened: Array<{
+    id: string;
+    relationship_type: string;
+    primary_entity: string;
+    referencing_entity: string;
+    referencing_attribute?: string;
+    cascade_delete?: string;
+    cascade_assign?: string;
+  }> = [];
+
+  for (const ent of entities) {
+    for (const rel of ent.relationships) {
+      flattened.push({
+        id: `rel_${projectId}_${rel.schema_name}_${flattened.length}`,
+        relationship_type: rel.relationship_type,
+        primary_entity: rel.primary_entity.toLowerCase(),
+        referencing_entity: rel.referencing_entity.toLowerCase(),
+        referencing_attribute: rel.referencing_attribute?.toLowerCase(),
+        cascade_delete: rel.cascade_delete,
+        cascade_assign: rel.cascade_assign,
+      });
+    }
+  }
+
+  for (let i = 0; i < flattened.length; i += batchSize) {
+    const batch = flattened.slice(i, i + batchSize);
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+
+    batch.forEach((r, idx) => {
+      const offset = idx * 8;
+      values.push(
+        r.id,
+        projectId,
+        r.relationship_type,
+        r.primary_entity,
+        r.referencing_entity,
+        r.referencing_attribute || null,
+        r.cascade_delete || null,
+        r.cascade_assign || null
+      );
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8})`
+      );
+    });
+
+    await tx.query(
+      `
+      INSERT INTO entity_relationships_flat (
+        id, project_id, relationship_type, primary_entity, referencing_entity, referencing_attribute, cascade_delete, cascade_assign
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (id) DO UPDATE SET
+        relationship_type = EXCLUDED.relationship_type,
+        primary_entity = EXCLUDED.primary_entity,
+        referencing_entity = EXCLUDED.referencing_entity,
+        referencing_attribute = EXCLUDED.referencing_attribute,
+        cascade_delete = EXCLUDED.cascade_delete,
+        cascade_assign = EXCLUDED.cascade_assign;
+    `,
+      values
+    );
+  }
 }
 
 async function saveProjectTx(tx: Transaction, project: ProjectRecord): Promise<void> {
@@ -220,6 +705,40 @@ async function saveProjectTx(tx: Transaction, project: ProjectRecord): Promise<v
       JSON.stringify(project.stats),
     ]
   );
+
+  // Clear existing auxiliary child records if updating
+  await tx.query('DELETE FROM web_resources WHERE project_id = $1;', [project.id]);
+  await tx.query('DELETE FROM form_event_handlers WHERE project_id = $1;', [project.id]);
+  await tx.query('DELETE FROM component_dependencies WHERE project_id = $1;', [project.id]);
+  await tx.query('DELETE FROM flow_integrations WHERE project_id = $1;', [project.id]);
+  await tx.query('DELETE FROM flow_triggers WHERE project_id = $1;', [project.id]);
+  await tx.query('DELETE FROM hardcoded_literals WHERE project_id = $1;', [project.id]);
+  await tx.query('DELETE FROM entity_relationships_flat WHERE project_id = $1;', [project.id]);
+
+  // Insert auxiliary records from SolutionAST
+  if (project.ast_json) {
+    if (project.ast_json.web_resources?.length) {
+      await insertWebResourcesTx(tx, project.id, project.ast_json.web_resources);
+    }
+    if (project.ast_json.form_event_handlers?.length) {
+      await insertFormEventHandlersTx(tx, project.id, project.ast_json.form_event_handlers);
+    }
+    if (project.ast_json.dependencies?.length) {
+      await insertComponentDependenciesTx(tx, project.id, project.ast_json.dependencies);
+    }
+    if (project.ast_json.flow_integrations?.length) {
+      await insertFlowIntegrationsTx(tx, project.id, project.ast_json.flow_integrations);
+    }
+    if (project.ast_json.flow_triggers?.length) {
+      await insertFlowTriggersTx(tx, project.id, project.ast_json.flow_triggers);
+    }
+    if (project.ast_json.hardcoded_literals?.length) {
+      await insertHardcodedLiteralsTx(tx, project.id, project.ast_json.hardcoded_literals);
+    }
+    if (project.ast_json.entities?.length) {
+      await insertFlattenedRelationshipsTx(tx, project.id, project.ast_json.entities);
+    }
+  }
 }
 
 export async function saveProject(project: ProjectRecord): Promise<void> {
@@ -796,15 +1315,306 @@ export async function getDatabaseStats(): Promise<DatabaseStats> {
   const cCount = await db.query<{ count: string }>(
     'SELECT count(*) as count FROM document_chunks;'
   );
+  const wCount = await db.query<{ count: string }>(
+    'SELECT count(*) as count FROM web_resources;'
+  );
+  const depCount = await db.query<{ count: string }>(
+    'SELECT count(*) as count FROM component_dependencies;'
+  );
+  const intCount = await db.query<{ count: string }>(
+    'SELECT count(*) as count FROM flow_integrations;'
+  );
 
   return {
     project_count: parseInt(pCount.rows[0]?.count || '0', 10),
     document_count: parseInt(dCount.rows[0]?.count || '0', 10),
     chunk_count: parseInt(cCount.rows[0]?.count || '0', 10),
+    web_resource_count: parseInt(wCount.rows[0]?.count || '0', 10),
+    dependency_count: parseInt(depCount.rows[0]?.count || '0', 10),
+    flow_integration_count: parseInt(intCount.rows[0]?.count || '0', 10),
   };
 }
 
 export async function clearAllData(): Promise<void> {
   const db = await getDb();
   await db.exec('DELETE FROM projects;');
+}
+
+/**
+ * Queries component dependencies to evaluate blast radius or column/table impact.
+ */
+export async function queryComponentDependencies(
+  projectId?: string,
+  targetEntity?: string,
+  targetField?: string,
+  operationType?: string
+): Promise<ComponentDependencyRecord[]> {
+  const db = await getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (projectId) {
+    conditions.push(`project_id = $${idx++}`);
+    params.push(projectId);
+  }
+  if (targetEntity) {
+    conditions.push(`target_entity = $${idx++}`);
+    params.push(targetEntity.toLowerCase().trim());
+  }
+  if (targetField) {
+    conditions.push(`target_field = $${idx++}`);
+    params.push(targetField.toLowerCase().trim());
+  }
+  if (operationType) {
+    conditions.push(`operation_type = $${idx++}`);
+    params.push(operationType.toUpperCase().trim());
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT id, project_id, source_type, source_id, source_name, location_detail,
+           target_entity, target_field, operation_type, context_snippet, created_at
+    FROM component_dependencies
+    ${whereClause}
+    ORDER BY source_name ASC, location_detail ASC;
+  `;
+
+  const res = await db.query<ComponentDependencyRecord>(query, params);
+  return res.rows;
+}
+
+/**
+ * Queries Cloud Flow integrations and connectors (e.g. Power BI, Dataverse, HTTP, etc.).
+ */
+export async function queryFlowIntegrations(
+  projectId?: string,
+  connectorFilter?: string,
+  isPremium?: boolean
+): Promise<FlowIntegrationRecord[]> {
+  const db = await getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (projectId) {
+    conditions.push(`project_id = $${idx++}`);
+    params.push(projectId);
+  }
+  if (connectorFilter) {
+    conditions.push(`(connector_name ILIKE $${idx} OR connector_id ILIKE $${idx})`);
+    params.push(`%${connectorFilter.trim()}%`);
+    idx++;
+  }
+  if (isPremium !== undefined) {
+    conditions.push(`is_premium = $${idx++}`);
+    params.push(isPremium);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT id, project_id, flow_id, flow_name, connector_id, connector_name,
+           operation_id, action_name, is_premium, created_at
+    FROM flow_integrations
+    ${whereClause}
+    ORDER BY flow_name ASC, action_name ASC;
+  `;
+
+  const res = await db.query<FlowIntegrationRecord>(query, params);
+  return res.rows;
+}
+
+/**
+ * Queries Cloud Flow triggers to detect runaway loops, missing filters, or entity change triggers.
+ */
+export async function queryFlowTriggers(
+  projectId?: string,
+  tableName?: string,
+  missingFilterOnly?: boolean
+): Promise<FlowTriggerRecord[]> {
+  const db = await getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (projectId) {
+    conditions.push(`project_id = $${idx++}`);
+    params.push(projectId);
+  }
+  if (tableName) {
+    conditions.push(`table_name ILIKE $${idx++}`);
+    params.push(tableName.toLowerCase().trim());
+  }
+  if (missingFilterOnly) {
+    conditions.push(`has_filter = false`);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT id, project_id, flow_id, flow_name, trigger_type, table_name,
+           change_type, filter_expression, has_filter, select_columns, created_at
+    FROM flow_triggers
+    ${whereClause}
+    ORDER BY flow_name ASC;
+  `;
+
+  const res = await db.query<FlowTriggerRecord>(query, params);
+  return res.rows;
+}
+
+/**
+ * Queries Web Resources and client-side JavaScript/HTML assets.
+ */
+export async function queryWebResources(
+  projectId?: string,
+  resourceType?: string,
+  deprecatedOnly?: boolean
+): Promise<WebResourceRecord[]> {
+  const db = await getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (projectId) {
+    conditions.push(`project_id = $${idx++}`);
+    params.push(projectId);
+  }
+  if (resourceType) {
+    conditions.push(`resource_type ILIKE $${idx++}`);
+    params.push(resourceType.trim());
+  }
+  if (deprecatedOnly) {
+    conditions.push(`(uses_deprecated_xrm = true OR uses_direct_dom = true)`);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT id, project_id, name, display_name, resource_type, description,
+           file_size_bytes, content_text, detected_functions, uses_deprecated_xrm,
+           uses_direct_dom, created_at
+    FROM web_resources
+    ${whereClause}
+    ORDER BY name ASC;
+  `;
+
+  const res = await db.query<WebResourceRecord>(query, params);
+  return res.rows;
+}
+
+/**
+ * Queries Form Event Handlers (OnLoad, OnSave, OnChange) mapped to Dataverse forms and attributes.
+ */
+export async function queryFormEventHandlers(
+  projectId?: string,
+  entityName?: string,
+  targetField?: string
+): Promise<FormEventHandlerRecord[]> {
+  const db = await getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (projectId) {
+    conditions.push(`project_id = $${idx++}`);
+    params.push(projectId);
+  }
+  if (entityName) {
+    conditions.push(`entity_name = $${idx++}`);
+    params.push(entityName.toLowerCase().trim());
+  }
+  if (targetField) {
+    conditions.push(`(target_field = $${idx} OR target_field IS NULL)`);
+    params.push(targetField.toLowerCase().trim());
+    idx++;
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT id, project_id, entity_name, form_id, form_name, event_type,
+           target_field, library_name, function_name, pass_execution_context, enabled, created_at
+    FROM form_event_handlers
+    ${whereClause}
+    ORDER BY entity_name ASC, form_name ASC, event_type ASC;
+  `;
+
+  const res = await db.query<FormEventHandlerRecord>(query, params);
+  return res.rows;
+}
+
+/**
+ * Queries Hardcoded Literals (URLs, GUIDs, emails) across flows, apps, and scripts.
+ */
+export async function queryHardcodedLiterals(
+  projectId?: string,
+  literalType?: string
+): Promise<HardcodedLiteralRecord[]> {
+  const db = await getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (projectId) {
+    conditions.push(`project_id = $${idx++}`);
+    params.push(projectId);
+  }
+  if (literalType) {
+    conditions.push(`literal_type = $${idx++}`);
+    params.push(literalType.toUpperCase().trim());
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT id, project_id, component_type, component_name, literal_type, value, code_context, created_at
+    FROM hardcoded_literals
+    ${whereClause}
+    ORDER BY component_name ASC;
+  `;
+
+  const res = await db.query<HardcodedLiteralRecord>(query, params);
+  return res.rows;
+}
+
+/**
+ * Queries flattened Dataverse relationships for cascade rules and foreign keys.
+ */
+export async function queryEntityRelationshipsFlat(
+  projectId?: string,
+  entityName?: string
+): Promise<Array<{
+  id: string;
+  project_id: string;
+  relationship_type: string;
+  primary_entity: string;
+  referencing_entity: string;
+  referencing_attribute?: string;
+  cascade_delete?: string;
+  cascade_assign?: string;
+}>> {
+  const db = await getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (projectId) {
+    conditions.push(`project_id = $${idx++}`);
+    params.push(projectId);
+  }
+  if (entityName) {
+    const lower = entityName.toLowerCase().trim();
+    conditions.push(`(primary_entity = $${idx} OR referencing_entity = $${idx})`);
+    params.push(lower);
+    idx++;
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT id, project_id, relationship_type, primary_entity, referencing_entity,
+           referencing_attribute, cascade_delete, cascade_assign
+    FROM entity_relationships_flat
+    ${whereClause}
+    ORDER BY primary_entity ASC, referencing_entity ASC;
+  `;
+
+  const res = await db.query<any>(query, params);
+  return res.rows;
 }
