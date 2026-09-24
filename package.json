@@ -1,0 +1,25 @@
+{
+  "name": "pp-pedia",
+  "version": "1.0.0",
+  "description": "Intelligent client-side documentation generator and RAG assistant for Microsoft Power Platform solutions.",
+  "scripts": {
+    "dev": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "preview": "npm run preview --prefix client",
+    "test": "node test-parser.mjs"
+  },
+  "keywords": [
+    "power-platform",
+    "dataverse",
+    "power-automate",
+    "canvas-apps",
+    "rag",
+    "pglite",
+    "pgvector",
+    "embeddings",
+    "mermaid"
+  ],
+  "author": "pp-pedia contributors",
+  "license": "Apache-2.0"
+}
+
