@@ -1,4 +1,4 @@
-import { SolutionAST, DataverseEntity, CloudFlow, CanvasApp, FlowAction, FlowTrigger } from '../../types/solution';
+import { SolutionAST, DataverseEntity, CloudFlow, CanvasApp, FlowAction, FlowTrigger, TokenUsage } from '../../types/solution';
 import { cleanFlowDisplayName } from '../parser/solutionParser';
 import { DocumentRecord } from '../../types/db';
 import { formatConnectionReference } from './connectorUtils';
@@ -43,7 +43,8 @@ async function callOpenAI(
   systemPrompt: string,
   userPrompt: string,
   settings: AISettings,
-  retries = 2
+  retries = 2,
+  onTokenUsage?: (usage: TokenUsage) => void
 ): Promise<string> {
   const url = `${settings.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   let lastError: unknown;
@@ -84,6 +85,14 @@ async function callOpenAI(
       }
 
       const data = await response.json();
+      if (data?.usage) {
+        onTokenUsage?.({
+          promptTokens: data.usage.prompt_tokens ?? 0,
+          completionTokens: data.usage.completion_tokens ?? 0,
+          totalTokens: data.usage.total_tokens ?? 0,
+          requests: 1,
+        });
+      }
       return data.choices?.[0]?.message?.content || 'No content generated.';
     } catch (err) {
       lastError = err;
@@ -931,12 +940,26 @@ async function runWithConcurrency<T>(
 export async function generateDocumentationSuite(
   projectId: string,
   ast: SolutionAST,
-  onProgress?: (current: number, total: number, stepLabel: string) => void,
+  onProgress?: (current: number, total: number, stepLabel: string, tokenUsage?: TokenUsage) => void,
   options?: DocGeneratorOptions
 ): Promise<DocumentRecord[]> {
   const settings = getAISettings();
   const hasApiKey = !settings.forceDeterministicDocs && Boolean(settings.apiKey && settings.apiKey.length > 5);
   const concurrency = Math.max(1, options?.concurrency ?? 4);
+
+  const accumulatedUsage: TokenUsage = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    requests: 0,
+  };
+
+  const handleTokenUsage = (u: TokenUsage) => {
+    accumulatedUsage.promptTokens += u.promptTokens;
+    accumulatedUsage.completionTokens += u.completionTokens;
+    accumulatedUsage.totalTokens += u.totalTokens;
+    accumulatedUsage.requests = (accumulatedUsage.requests || 0) + (u.requests || 1);
+  };
 
   const tasks: DocTask[] = [];
 
@@ -948,7 +971,7 @@ export async function generateDocumentationSuite(
       if (hasApiKey) {
         try {
           const { system, user } = buildOverviewPrompt(ast);
-          overviewContent = await callOpenAI(system, user, settings);
+          overviewContent = await callOpenAI(system, user, settings, 2, handleTokenUsage);
         } catch (e) {
           console.warn('OpenAI error, falling back to deterministic generator:', e);
           overviewContent = generateDeterministicOverview(ast);
@@ -976,7 +999,7 @@ export async function generateDocumentationSuite(
       if (hasApiKey && ast.entities.length > 0) {
         try {
           const { system, user } = buildDataversePrompt(ast.entities[0]);
-          dataverseContent = await callOpenAI(system, user, settings);
+          dataverseContent = await callOpenAI(system, user, settings, 2, handleTokenUsage);
         } catch (e) {
           console.warn('OpenAI error, falling back to deterministic generator:', e);
           dataverseContent = generateDeterministicDataverse(ast);
@@ -1007,7 +1030,7 @@ export async function generateDocumentationSuite(
         if (hasApiKey) {
           try {
             const { system, user } = buildFlowPrompt(flow);
-            flowContent = await callOpenAI(system, user, settings);
+            flowContent = await callOpenAI(system, user, settings, 2, handleTokenUsage);
           } catch (e) {
             console.warn(`OpenAI error for flow ${flowTitle}, falling back to deterministic generator:`, e);
             flowContent = generateDeterministicFlow(flow);
@@ -1039,7 +1062,7 @@ export async function generateDocumentationSuite(
         if (hasApiKey) {
           try {
             const { system, user } = buildCanvasAppPrompt(app);
-            appContent = await callOpenAI(system, user, settings);
+            appContent = await callOpenAI(system, user, settings, 2, handleTokenUsage);
           } catch (e) {
             console.warn(`OpenAI error for app ${appTitle}, falling back to deterministic generator:`, e);
             appContent = generateDeterministicCanvasApp(app);
@@ -1104,6 +1127,11 @@ export async function generateDocumentationSuite(
   onProgress?.(0, tasks.length, tasks[0].label);
 
   return runWithConcurrency(tasks, concurrency, (completed, total, label) => {
-    onProgress?.(completed, total, label);
+    onProgress?.(
+      completed,
+      total,
+      label,
+      hasApiKey && accumulatedUsage.totalTokens > 0 ? { ...accumulatedUsage } : undefined
+    );
   });
 }

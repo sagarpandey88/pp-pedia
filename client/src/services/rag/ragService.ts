@@ -1,4 +1,5 @@
 import { SimilarityResult } from '../../types/db';
+import { TokenUsage } from '../../types/solution';
 import { AgentActivityStep } from '../agent/agentTypes';
 import { runAgenticAssistant } from '../agent/agentRunner';
 
@@ -9,12 +10,14 @@ export interface ChatMessage {
   citations?: SimilarityResult[];
   timestamp: string;
   steps?: AgentActivityStep[];
+  usage?: TokenUsage;
 }
 
 export interface RAGAnswer {
   content: string;
   citations: SimilarityResult[];
   steps?: AgentActivityStep[];
+  usage?: TokenUsage;
 }
 
 /**
@@ -39,5 +42,6 @@ export async function askRAGAssistant(
     content: answer.content,
     citations: answer.citations,
     steps: answer.steps,
+    usage: answer.usage,
   };
 }

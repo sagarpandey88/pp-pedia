@@ -1,4 +1,5 @@
 import { SimilarityResult } from '../../types/db';
+import { TokenUsage } from '../../types/solution';
 
 export interface AgentActivityStep {
   id: string;
@@ -21,4 +22,5 @@ export interface AgentAnswer {
   content: string;
   citations: SimilarityResult[];
   steps: AgentActivityStep[];
+  usage?: TokenUsage;
 }

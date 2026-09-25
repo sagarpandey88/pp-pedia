@@ -269,3 +269,10 @@ export interface SolutionAST {
   stats: SolutionStats;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  requests?: number;
+}
+
