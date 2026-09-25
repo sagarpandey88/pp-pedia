@@ -88,6 +88,16 @@ npm run build
 
 The production assets will be output to `client/dist`.
 
+### Deploying to GitHub Pages
+
+An automated GitHub Actions workflow is pre-configured at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+
+To enable deployment:
+1. In your GitHub repository, navigate to **Settings** > **Pages**.
+2. Under **Build and deployment** > **Source**, choose **GitHub Actions**.
+3. Push changes to the `main` branch (or run the workflow manually via the **Actions** tab).
+4. Your application will be live at `https://<username>.github.io/pp-pedia/`.
+
 ---
 
 ## 🏗️ Architecture & Data Flow
