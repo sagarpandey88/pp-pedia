@@ -138,24 +138,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <div className="grid grid-cols-2 gap-2 my-4 pt-3 border-t border-slate-800/80">
                       <div className="flex items-center gap-1.5 text-xs text-slate-300 bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-850">
                         <Database className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{proj.stats.entity_count} Tables</span>
+                        <span>{proj.stats?.entity_count ?? 0} Tables</span>
                       </div>
                       <div className="flex items-center gap-1.5 text-xs text-slate-300 bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-850">
                         <Workflow className="w-3.5 h-3.5 text-sky-400" />
-                        <span>{proj.stats.flow_count} Flows</span>
+                        <span>{proj.stats?.flow_count ?? 0} Flows</span>
                       </div>
                       <div className="flex items-center gap-1.5 text-xs text-slate-300 bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-850">
                         <Layout className="w-3.5 h-3.5 text-purple-400" />
-                        <span>{proj.stats.canvas_app_count} Apps</span>
+                        <span>{proj.stats?.canvas_app_count ?? 0} Apps</span>
                       </div>
                       <div className="flex items-center gap-1.5 text-xs text-slate-300 bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-850">
                         <Sliders className="w-3.5 h-3.5 text-amber-400" />
-                        <span>{proj.stats.env_var_count} Vars</span>
+                        <span>{proj.stats?.env_var_count ?? 0} Vars</span>
                       </div>
-                      {((proj.stats.web_resource_count ?? 0) > 0 || (proj.ast_json?.web_resources?.length ?? 0) > 0) && (
+                      {((proj.stats?.web_resource_count ?? 0) > 0 || (proj.ast_json?.web_resources?.length ?? 0) > 0) && (
                         <div className="col-span-2 flex items-center gap-1.5 text-xs text-slate-300 bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-850">
                           <Code className="w-3.5 h-3.5 text-teal-400" />
-                          <span>{proj.stats.web_resource_count ?? proj.ast_json?.web_resources?.length ?? 0} Web Resources / Scripts</span>
+                          <span>{proj.stats?.web_resource_count ?? proj.ast_json?.web_resources?.length ?? 0} Web Resources / Scripts</span>
                         </div>
                       )}
                     </div>

@@ -51,7 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
             <div className="text-[10px] text-slate-400">
-              Power Platform Docs &amp; RAG
+              Power Platform Docs &amp; AI Assistant
             </div>
           </div>
         </button>
