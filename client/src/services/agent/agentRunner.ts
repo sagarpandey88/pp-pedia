@@ -4,6 +4,7 @@ import { getAISettings } from '../generator/docGenerator';
 import { getAllAgentTools } from './agentTools';
 import { AgentAnswer, AgentExecutionContext, AgentActivityStep } from './agentTypes';
 import { SimilarityResult } from '../../types/db';
+import { TokenUsage } from '../../types/solution';
 import { embedQuery } from '../embeddingService';
 import { querySimilarChunks } from '../db';
 
@@ -178,10 +179,41 @@ Strategy:
       (typeof result.finalOutput === 'string' ? result.finalOutput : JSON.stringify(result.finalOutput)) ||
       'No answer was produced by the agent.';
 
+    // Extract token usage from OpenAI Agents SDK
+    const sdkUsage = (result as any).state?.usage;
+    let promptTokens = sdkUsage?.inputTokens ?? 0;
+    let completionTokens = sdkUsage?.outputTokens ?? 0;
+    let totalTokens = sdkUsage?.totalTokens ?? (promptTokens + completionTokens);
+    let requests = sdkUsage?.requests ?? 0;
+
+    // Fallback: sum up per-turn usage from rawResponses if sdkUsage was empty
+    if (totalTokens === 0 && Array.isArray((result as any).rawResponses)) {
+      for (const resp of (result as any).rawResponses) {
+        const u = resp?.usage;
+        if (u) {
+          promptTokens += u.prompt_tokens ?? u.inputTokens ?? 0;
+          completionTokens += u.completion_tokens ?? u.outputTokens ?? 0;
+          totalTokens += u.total_tokens ?? u.totalTokens ?? 0;
+          requests += 1;
+        }
+      }
+    }
+
+    const usage: TokenUsage | undefined =
+      totalTokens > 0
+        ? {
+            promptTokens,
+            completionTokens,
+            totalTokens,
+            requests: Math.max(1, requests),
+          }
+        : undefined;
+
     return {
       content: answerContent,
       citations: context.citations,
       steps: context.steps,
+      usage,
     };
   } catch (err: any) {
     console.warn('Agent SDK execution error, falling back to local synthesis:', err);

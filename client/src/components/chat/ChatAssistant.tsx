@@ -14,8 +14,10 @@ import {
   ChevronDown,
   Copy,
   Check,
+  Zap,
 } from 'lucide-react';
 import { ProjectRecord, SimilarityResult } from '../../types/db';
+import { TokenUsage } from '../../types/solution';
 import { askRAGAssistant, ChatMessage } from '../../services/rag/ragService';
 import { AgentActivityStep } from '../../services/agent/agentTypes';
 import { CitationCard } from './CitationCard';
@@ -76,11 +78,11 @@ const ChatMessageContent: React.FC<{
   role: 'user' | 'assistant' | 'system';
 }> = ({ content, role }) => {
   if (role === 'user') {
-    return <div className="whitespace-pre-wrap text-sm leading-relaxed">{content}</div>;
+    return <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{content}</div>;
   }
 
   return (
-    <div className="text-sm leading-relaxed text-slate-200">
+    <div className="text-sm leading-relaxed text-slate-200 break-words">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -318,6 +320,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
         citations: response.citations,
         steps: response.steps || liveSteps,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        usage: response.usage,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
@@ -338,6 +341,19 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   const handleSelectCitation = (cit: SimilarityResult) => {
     onNavigateToDoc(cit.project_id, cit.slug);
   };
+
+  const sessionTokens = messages.reduce(
+    (acc, msg) => {
+      if (msg.usage) {
+        acc.promptTokens += msg.usage.promptTokens;
+        acc.completionTokens += msg.usage.completionTokens;
+        acc.totalTokens += msg.usage.totalTokens;
+        acc.requests = (acc.requests || 0) + (msg.usage.requests || 1);
+      }
+      return acc;
+    },
+    { promptTokens: 0, completionTokens: 0, totalTokens: 0, requests: 0 } as TokenUsage
+  );
 
   return (
     <div className="flex h-[calc(100vh-65px)] w-full flex-col bg-slate-950 text-slate-100">
@@ -360,8 +376,24 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
           </div>
         </div>
 
-        {/* Project scope dropdown */}
+        {/* Project scope dropdown and session metrics */}
         <div className="flex items-center gap-3">
+          {sessionTokens.totalTokens > 0 && (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 text-xs shadow-sm transition-all"
+              title={`LLM Session Usage: ${sessionTokens.totalTokens.toLocaleString()} total tokens (${sessionTokens.promptTokens.toLocaleString()} prompt · ${sessionTokens.completionTokens.toLocaleString()} completion across ${sessionTokens.requests || 1} API turns)`}
+            >
+              <Zap className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+              <span className="font-semibold text-white font-mono">
+                {sessionTokens.totalTokens.toLocaleString()}
+              </span>
+              <span className="text-[11px] text-indigo-300/80">tokens</span>
+              <span className="text-[10px] text-slate-400 hidden md:inline border-l border-slate-700/80 pl-1.5 ml-0.5 font-mono">
+                {sessionTokens.promptTokens.toLocaleString()} in / {sessionTokens.completionTokens.toLocaleString()} out
+              </span>
+            </div>
+          )}
+
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <Layers className="w-3.5 h-3.5 text-slate-500" />
             <span>Scope:</span>
@@ -428,26 +460,41 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex gap-3.5 ${
+                className={`flex items-start gap-3.5 ${
                   msg.role === 'user' ? 'justify-end' : 'justify-start'
                 }`}
               >
-                {msg.role === 'assistant' && (
+                {msg.role !== 'user' && (
                   <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Bot className="w-4 h-4" />
+                    {msg.role === 'system' ? (
+                      <Sparkles className="w-4 h-4" />
+                    ) : (
+                      <Bot className="w-4 h-4" />
+                    )}
                   </div>
                 )}
 
                 <div
-                  className={`max-w-3xl rounded-2xl p-4.5 text-sm shadow-sm overflow-hidden ${
+                  className={`max-w-3xl rounded-2xl p-4 sm:p-4.5 text-sm shadow-sm overflow-hidden ${
                     msg.role === 'user'
                       ? 'bg-indigo-600 text-white rounded-tr-none'
                       : 'bg-slate-900/90 border border-slate-800/90 text-slate-200 rounded-tl-none'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-4 mb-2 text-[11px] opacity-70">
-                    <span>{msg.role === 'user' ? 'You' : 'pp-pedia Agent'}</span>
-                    <span>{msg.timestamp}</span>
+                  <div className="flex items-center justify-between gap-4 mb-2.5 text-[11px] opacity-75">
+                    <span className="font-semibold">{msg.role === 'user' ? 'You' : msg.role === 'system' ? 'System' : 'pp-pedia Agent'}</span>
+                    <div className="flex items-center gap-2">
+                      {msg.usage && msg.usage.totalTokens > 0 && (
+                        <span
+                          className="px-1.5 py-0.5 rounded bg-indigo-950/70 border border-indigo-500/25 text-indigo-300 text-[10px] font-mono flex items-center gap-1"
+                          title={`Prompt: ${msg.usage.promptTokens.toLocaleString()} · Completion: ${msg.usage.completionTokens.toLocaleString()}`}
+                        >
+                          <Zap className="w-2.5 h-2.5 text-indigo-400" />
+                          <span>{msg.usage.totalTokens.toLocaleString()} tokens</span>
+                        </span>
+                      )}
+                      <span className="font-mono text-[10px]">{msg.timestamp}</span>
+                    </div>
                   </div>
 
                   {msg.steps && msg.steps.length > 0 && (
@@ -474,7 +521,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
             ))}
 
             {isLoading && (
-              <div className="flex gap-3.5 justify-start">
+              <div className="flex items-start gap-3.5 justify-start">
                 <div className="w-8 h-8 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center flex-shrink-0 mt-0.5">
                   <Bot className="w-4 h-4" />
                 </div>
@@ -482,7 +529,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                   {liveSteps.length > 0 ? (
                     <AgentActivityTrail steps={liveSteps} isLive={true} />
                   ) : (
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none p-4 text-xs text-slate-400 flex items-center gap-2.5">
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none p-4 sm:p-4.5 text-xs text-slate-400 flex items-center gap-2.5">
                       <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
                       <span>Agent reasoning & planning tool execution...</span>
                     </div>

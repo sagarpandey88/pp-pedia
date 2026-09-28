@@ -1,5 +1,6 @@
 import React from 'react';
-import { CheckCircle2, Circle, Loader2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Circle, Loader2, AlertCircle, Zap } from 'lucide-react';
+import { TokenUsage } from '../../types/solution';
 
 export interface IngestionStep {
   id: string;
@@ -13,6 +14,7 @@ interface IngestionProgressModalProps {
   steps: IngestionStep[];
   currentStatusText: string;
   overallProgress: number; // 0 - 100
+  tokenUsage?: TokenUsage;
   error?: string | null;
   onClose?: () => void;
 }
@@ -22,6 +24,7 @@ export const IngestionProgressModal: React.FC<IngestionProgressModalProps> = ({
   steps,
   currentStatusText,
   overallProgress,
+  tokenUsage,
   error,
   onClose,
 }) => {
@@ -106,6 +109,22 @@ export const IngestionProgressModal: React.FC<IngestionProgressModalProps> = ({
             </div>
           ))}
         </div>
+
+        {/* Token Usage metrics if LLM was used */}
+        {tokenUsage && tokenUsage.totalTokens > 0 && (
+          <div className="mb-6 p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 text-indigo-300 font-medium">
+              <Zap className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+              <span>LLM Token Usage</span>
+            </div>
+            <div className="flex items-center gap-2 font-mono text-slate-300">
+              <span className="text-white font-semibold">{tokenUsage.totalTokens.toLocaleString()} tokens</span>
+              <span className="text-[11px] text-slate-400">
+                ({tokenUsage.promptTokens.toLocaleString()} prompt · {tokenUsage.completionTokens.toLocaleString()} completion)
+              </span>
+            </div>
+          </div>
+        )}
 
         {hasError && (
           <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/50 text-xs text-rose-300 mb-6 font-mono">

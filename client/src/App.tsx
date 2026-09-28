@@ -22,6 +22,7 @@ import { generateDocumentationSuite, getAISettings } from './services/generator/
 import { chunkMarkdown } from './services/chunker';
 import { embedBatch, initEmbeddings } from './services/embeddingService';
 import { ProjectRecord, DocumentRecord, ChunkRecord } from './types/db';
+import { TokenUsage } from './types/solution';
 
 export function App() {
   const [currentView, setCurrentView] = useState<AppView>('dashboard');
@@ -36,6 +37,7 @@ export function App() {
   const [isIngesting, setIsIngesting] = useState(false);
   const [ingestionStatusText, setIngestionStatusText] = useState('');
   const [ingestionProgress, setIngestionProgress] = useState(0);
+  const [ingestionTokenUsage, setIngestionTokenUsage] = useState<TokenUsage | undefined>();
   const [ingestionError, setIngestionError] = useState<string | null>(null);
   const [ingestionSteps, setIngestionSteps] = useState<IngestionStep[]>([
     { id: 'unpack', label: '1. Unpack & Parse Solution XML/JSON', status: 'pending' },
@@ -102,6 +104,7 @@ export function App() {
   const handleUploadFile = async (fileOrBlob: File | Blob) => {
     setIsIngesting(true);
     setIngestionError(null);
+    setIngestionTokenUsage(undefined);
     setIngestionProgress(5);
     setIngestionStatusText('Reading solution file...');
 
@@ -134,15 +137,28 @@ export function App() {
       // Step 2: Generate Docs
       updateStepStatus('docs', 'in_progress');
       setIngestionProgress(35);
+      let cumulativeTokenUsage: TokenUsage | undefined;
       const generatedDocs = await generateDocumentationSuite(
         projectId,
         ast,
-        (current, total, stepLabel) => {
+        (current, total, stepLabel, tokenUsage) => {
           setIngestionStatusText(stepLabel);
           setIngestionProgress(35 + Math.round((current / total) * 25));
+          if (tokenUsage && tokenUsage.totalTokens > 0) {
+            cumulativeTokenUsage = tokenUsage;
+            setIngestionTokenUsage({ ...tokenUsage });
+          }
         }
       );
-      updateStepStatus('docs', 'completed', `Generated ${generatedDocs.length} technical documents`);
+      updateStepStatus(
+        'docs',
+        'completed',
+        `Generated ${generatedDocs.length} technical documents${
+          cumulativeTokenUsage && cumulativeTokenUsage.totalTokens > 0
+            ? ` (${cumulativeTokenUsage.totalTokens.toLocaleString()} LLM tokens)`
+            : ''
+        }`
+      );
 
       // Step 3: Semantic Chunking
       updateStepStatus('chunk', 'in_progress');
@@ -335,6 +351,7 @@ export function App() {
         steps={ingestionSteps}
         currentStatusText={ingestionStatusText}
         overallProgress={ingestionProgress}
+        tokenUsage={ingestionTokenUsage}
         error={ingestionError}
         onClose={() => {
           setIsIngesting(false);

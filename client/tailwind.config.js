@@ -7,7 +7,16 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      spacing: {
+        '4.5': '1.125rem',
+      },
+      borderWidth: {
+        '3': '3px',
+      },
       colors: {
+        slate: {
+          850: '#151e2e',
+        },
         brand: {
           50: '#eef2ff',
           100: '#e0e7ff',
