@@ -23,6 +23,7 @@ import { chunkMarkdown } from './services/chunker';
 import { embedBatch, initEmbeddings } from './services/embeddingService';
 import { ProjectRecord, DocumentRecord, ChunkRecord } from './types/db';
 import { TokenUsage } from './types/solution';
+import { ChatMessage } from './services/rag/ragService';
 
 export function App() {
   const [currentView, setCurrentView] = useState<AppView>('dashboard');
@@ -32,6 +33,7 @@ export function App() {
   const [activeDocId, setActiveDocId] = useState<string | undefined>(undefined);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   // Ingestion modal state
   const [isIngesting, setIsIngesting] = useState(false);
@@ -318,6 +320,17 @@ export function App() {
             documents={documents}
             activeDocId={activeDocId}
             onSelectDoc={setActiveDocId}
+            projects={projects}
+            onSelectProject={(id) => {
+              if (id) {
+                setActiveProjectId(id);
+                loadProjectDocs(id);
+              }
+            }}
+            onNavigateToDoc={handleNavigateToDoc}
+            onExpandToFullChat={() => setCurrentView('chat')}
+            chatMessages={chatMessages}
+            setChatMessages={setChatMessages}
           />
         )}
 
@@ -327,6 +340,9 @@ export function App() {
             activeProjectId={activeProjectId}
             onSelectProject={setActiveProjectId}
             onNavigateToDoc={handleNavigateToDoc}
+            messages={chatMessages}
+            setMessages={setChatMessages}
+            onDockToReader={() => setCurrentView('reader')}
           />
         )}
       </main>
@@ -342,6 +358,7 @@ export function App() {
           await refreshProjects();
           setActiveProjectId(undefined);
           setDocuments([]);
+          setChatMessages([]);
         }}
       />
 

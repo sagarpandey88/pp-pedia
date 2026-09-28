@@ -93,7 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            <span>RAG Assistant</span>
+            <span>PP AI</span>
           </button>
         </nav>
       </div>
