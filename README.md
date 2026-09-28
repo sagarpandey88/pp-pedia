@@ -16,6 +16,13 @@ Manual documentation of Low Code solutions is tiring and time consuming. Also as
 A Fully client side solution which extracts the solution , parses , generates docs , generates meta information, generates vector embeddings and stores it at client side.
 (BYOAI Fully optional) An AI Assistant which leverages the generated documents  , meta information using client side tools to provide answers like:
 
+Example Questions:
+"What is the blast radius if I delete or rename the cr_approval_status column on the cr_invoice table?"
+"If I make cr_tax_id a required field on cr_vendor, which flows or apps might fail on record creation?"
+"Which flows use premium connectors, and which connectors do they rely on?"
+"Do any of our JavaScript web resources use deprecated APIs like Xrm.Page or direct DOM manipulation (document.getElementById)?"
+"List all columns and custom choice option sets on the cr_purchase_order entity."
+
 
 ## How?
 Extract --> Parse --> Generate Docs --> Generate Meta Inforamtion --> Embed the Docs --> Preview 
