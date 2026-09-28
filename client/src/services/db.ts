@@ -21,6 +21,8 @@ import {
   FlowTriggerDetail,
   HardcodedLiteral,
   DataverseEntity,
+  BusinessRule,
+  SecurityRole,
 } from '../types/solution';
 
 const SCHEMA_EXTENSIONS_DDL = `
@@ -125,6 +127,37 @@ const SCHEMA_EXTENSIONS_DDL = `
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_relationships_flat ON entity_relationships_flat(project_id, primary_entity, referencing_entity);
+
+  CREATE TABLE IF NOT EXISTS business_rules (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    table_logical_name TEXT NOT NULL,
+    scope TEXT,
+    state TEXT,
+    description TEXT,
+    conditions JSONB,
+    actions JSONB,
+    else_actions JSONB,
+    fields_read JSONB,
+    fields_written JSONB,
+    applies_to_forms JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_business_rules_table ON business_rules(project_id, table_logical_name);
+
+  CREATE TABLE IF NOT EXISTS security_roles (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    business_unit TEXT,
+    description TEXT,
+    table_privileges JSONB,
+    misc_privileges JSONB,
+    assigned_apps JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_security_roles_project ON security_roles(project_id, name);
 `;
 
 let dbInstance: PGlite | null = null;
@@ -676,6 +709,110 @@ async function insertFlattenedRelationshipsTx(
   }
 }
 
+async function insertBusinessRulesTx(
+  tx: Transaction,
+  projectId: string,
+  rules: BusinessRule[],
+  batchSize = 50
+): Promise<void> {
+  for (let i = 0; i < rules.length; i += batchSize) {
+    const batch = rules.slice(i, i + batchSize);
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+
+    batch.forEach((r, idx) => {
+      const offset = idx * 13;
+      values.push(
+        r.id || `br_${projectId}_${r.table}_${idx}`,
+        projectId,
+        r.name,
+        r.table,
+        r.scope || null,
+        r.state || null,
+        r.description || null,
+        JSON.stringify(r.conditions || []),
+        JSON.stringify(r.actions || []),
+        JSON.stringify(r.else_actions || []),
+        JSON.stringify(r.fields_read || []),
+        JSON.stringify(r.fields_written || []),
+        JSON.stringify(r.applies_to_forms || [])
+      );
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13})`
+      );
+    });
+
+    await tx.query(
+      `
+      INSERT INTO business_rules (
+        id, project_id, name, table_logical_name, scope, state, description,
+        conditions, actions, else_actions, fields_read, fields_written, applies_to_forms
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        table_logical_name = EXCLUDED.table_logical_name,
+        scope = EXCLUDED.scope,
+        state = EXCLUDED.state,
+        description = EXCLUDED.description,
+        conditions = EXCLUDED.conditions,
+        actions = EXCLUDED.actions,
+        else_actions = EXCLUDED.else_actions,
+        fields_read = EXCLUDED.fields_read,
+        fields_written = EXCLUDED.fields_written,
+        applies_to_forms = EXCLUDED.applies_to_forms;
+    `,
+      values
+    );
+  }
+}
+
+async function insertSecurityRolesTx(
+  tx: Transaction,
+  projectId: string,
+  roles: SecurityRole[],
+  batchSize = 50
+): Promise<void> {
+  for (let i = 0; i < roles.length; i += batchSize) {
+    const batch = roles.slice(i, i + batchSize);
+    const values: unknown[] = [];
+    const placeholders: string[] = [];
+
+    batch.forEach((r, idx) => {
+      const offset = idx * 8;
+      values.push(
+        r.id || `role_${projectId}_${idx}`,
+        projectId,
+        r.name,
+        r.business_unit || null,
+        r.description || null,
+        JSON.stringify(r.table_privileges || []),
+        JSON.stringify(r.misc_privileges || []),
+        JSON.stringify(r.assigned_apps || [])
+      );
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8})`
+      );
+    });
+
+    await tx.query(
+      `
+      INSERT INTO security_roles (
+        id, project_id, name, business_unit, description,
+        table_privileges, misc_privileges, assigned_apps
+      ) VALUES ${placeholders.join(', ')}
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        business_unit = EXCLUDED.business_unit,
+        description = EXCLUDED.description,
+        table_privileges = EXCLUDED.table_privileges,
+        misc_privileges = EXCLUDED.misc_privileges,
+        assigned_apps = EXCLUDED.assigned_apps;
+    `,
+      values
+    );
+  }
+}
+
 async function saveProjectTx(tx: Transaction, project: ProjectRecord): Promise<void> {
   await tx.query(
     `
@@ -714,6 +851,8 @@ async function saveProjectTx(tx: Transaction, project: ProjectRecord): Promise<v
   await tx.query('DELETE FROM flow_triggers WHERE project_id = $1;', [project.id]);
   await tx.query('DELETE FROM hardcoded_literals WHERE project_id = $1;', [project.id]);
   await tx.query('DELETE FROM entity_relationships_flat WHERE project_id = $1;', [project.id]);
+  await tx.query('DELETE FROM business_rules WHERE project_id = $1;', [project.id]);
+  await tx.query('DELETE FROM security_roles WHERE project_id = $1;', [project.id]);
 
   // Insert auxiliary records from SolutionAST
   if (project.ast_json) {
@@ -737,6 +876,12 @@ async function saveProjectTx(tx: Transaction, project: ProjectRecord): Promise<v
     }
     if (project.ast_json.entities?.length) {
       await insertFlattenedRelationshipsTx(tx, project.id, project.ast_json.entities);
+    }
+    if (project.ast_json.business_rules?.length) {
+      await insertBusinessRulesTx(tx, project.id, project.ast_json.business_rules);
+    }
+    if (project.ast_json.security_roles?.length) {
+      await insertSecurityRolesTx(tx, project.id, project.ast_json.security_roles);
     }
   }
 }
@@ -1618,3 +1763,85 @@ export async function queryEntityRelationshipsFlat(
   const res = await db.query<any>(query, params);
   return res.rows;
 }
+
+/**
+ * Queries business rules for a project and optional table.
+ */
+export async function queryBusinessRules(
+  projectId?: string,
+  tableLogicalName?: string
+): Promise<BusinessRule[]> {
+  const db = await getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (projectId) {
+    conditions.push(`project_id = $${idx++}`);
+    params.push(projectId);
+  }
+  if (tableLogicalName) {
+    conditions.push(`table_logical_name = $${idx++}`);
+    params.push(tableLogicalName.toLowerCase().trim());
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT id, name, table_logical_name AS table, scope, state, description,
+           conditions, actions, else_actions, fields_read, fields_written, applies_to_forms
+    FROM business_rules
+    ${whereClause}
+    ORDER BY table_logical_name ASC, name ASC;
+  `;
+
+  const res = await db.query<any>(query, params);
+  return res.rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    table: r.table,
+    scope: r.scope,
+    state: r.state,
+    description: r.description,
+    conditions: typeof r.conditions === 'string' ? JSON.parse(r.conditions) : (r.conditions || []),
+    actions: typeof r.actions === 'string' ? JSON.parse(r.actions) : (r.actions || []),
+    else_actions: typeof r.else_actions === 'string' ? JSON.parse(r.else_actions) : (r.else_actions || []),
+    fields_read: typeof r.fields_read === 'string' ? JSON.parse(r.fields_read) : (r.fields_read || []),
+    fields_written: typeof r.fields_written === 'string' ? JSON.parse(r.fields_written) : (r.fields_written || []),
+    applies_to_forms: typeof r.applies_to_forms === 'string' ? JSON.parse(r.applies_to_forms) : (r.applies_to_forms || []),
+  }));
+}
+
+export async function querySecurityRoles(
+  projectId?: string
+): Promise<SecurityRole[]> {
+  const db = await getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (projectId) {
+    conditions.push(`project_id = $${idx++}`);
+    params.push(projectId);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `
+    SELECT id, name, business_unit, description,
+           table_privileges, misc_privileges, assigned_apps
+    FROM security_roles
+    ${whereClause}
+    ORDER BY name ASC;
+  `;
+
+  const res = await db.query<any>(query, params);
+  return res.rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    business_unit: r.business_unit,
+    description: r.description,
+    table_privileges: typeof r.table_privileges === 'string' ? JSON.parse(r.table_privileges) : (r.table_privileges || []),
+    misc_privileges: typeof r.misc_privileges === 'string' ? JSON.parse(r.misc_privileges) : (r.misc_privileges || []),
+    assigned_apps: typeof r.assigned_apps === 'string' ? JSON.parse(r.assigned_apps) : (r.assigned_apps || []),
+  }));
+}
+

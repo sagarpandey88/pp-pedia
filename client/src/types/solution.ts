@@ -60,6 +60,8 @@ export interface DataverseEntity {
   entity_set_name?: string;
   attributes: DataverseAttribute[];
   relationships: DataverseRelationship[];
+  forms_count?: number;
+  views_count?: number;
 }
 
 export interface FlowTrigger {
@@ -198,7 +200,7 @@ export interface FormEventHandler {
 
 export interface ComponentDependency {
   id: string;
-  source_type: 'flow' | 'canvas_app' | 'javascript' | 'relationship' | 'formula';
+  source_type: 'flow' | 'canvas_app' | 'javascript' | 'relationship' | 'formula' | 'security_role';
   source_id: string;
   source_name: string;
   location_detail?: string;
@@ -240,6 +242,61 @@ export interface HardcodedLiteral {
   code_context?: string;
 }
 
+export interface BusinessRuleCondition {
+  field: string;
+  field_display_name?: string;
+  operator: string;
+  value?: string;
+  logical_join?: 'AND' | 'OR';
+}
+
+export interface BusinessRuleAction {
+  action_type: 'Show error' | 'Set value' | 'Set visibility' | 'Set required' | 'Lock' | 'Recommendation' | string;
+  target_field: string;
+  target_field_display_name?: string;
+  value_or_message?: string;
+}
+
+export interface BusinessRule {
+  id: string;
+  name: string;
+  logical_name?: string;
+  table: string; // logical name of table
+  table_display_name?: string;
+  scope: 'Entity' | 'All Forms' | string;
+  state: 'Active' | 'Draft';
+  description?: string;
+  conditions: BusinessRuleCondition[];
+  actions: BusinessRuleAction[];
+  else_actions: BusinessRuleAction[];
+  fields_read: string[];
+  fields_written: string[];
+  applies_to_forms: string[];
+}
+
+export interface SecurityRoleTablePrivilege {
+  table: string; // logical name, e.g. 'contoso_ticket'
+  table_display_name?: string;
+  create: 'None' | 'User' | 'BU' | 'Parent' | 'Org';
+  read: 'None' | 'User' | 'BU' | 'Parent' | 'Org';
+  write: 'None' | 'User' | 'BU' | 'Parent' | 'Org';
+  delete: 'None' | 'User' | 'BU' | 'Parent' | 'Org';
+  append: 'None' | 'User' | 'BU' | 'Parent' | 'Org';
+  append_to: 'None' | 'User' | 'BU' | 'Parent' | 'Org';
+  assign: 'None' | 'User' | 'BU' | 'Parent' | 'Org';
+  share: 'None' | 'User' | 'BU' | 'Parent' | 'Org';
+}
+
+export interface SecurityRole {
+  id: string;
+  name: string;
+  business_unit?: string;
+  description?: string;
+  table_privileges: SecurityRoleTablePrivilege[];
+  misc_privileges: string[];
+  assigned_apps: string[];
+}
+
 export interface SolutionStats {
   entity_count: number;
   flow_count: number;
@@ -247,6 +304,8 @@ export interface SolutionStats {
   env_var_count: number;
   relationship_count: number;
   option_set_count: number;
+  business_rule_count?: number;
+  security_role_count?: number;
   web_resource_count?: number;
   script_count?: number;
   dependency_count?: number;
@@ -266,6 +325,8 @@ export interface SolutionAST {
   flow_integrations?: FlowIntegration[];
   flow_triggers?: FlowTriggerDetail[];
   hardcoded_literals?: HardcodedLiteral[];
+  business_rules?: BusinessRule[];
+  security_roles?: SecurityRole[];
   stats: SolutionStats;
 }
 

@@ -44,6 +44,10 @@ export async function exportDocsAsZip(
       filePath = `flows/${doc.slug}.md`;
     } else if (doc.doc_type === 'canvas_app') {
       filePath = `canvas-apps/${doc.slug}.md`;
+    } else if (doc.doc_type === 'business_rule') {
+      filePath = `business_rules/${doc.slug}.md`;
+    } else if (doc.doc_type === 'security_role') {
+      filePath = `security_roles/${doc.slug}.md`;
     } else if (doc.doc_type === 'env_vars') {
       filePath = 'configuration/environment-variables.md';
     } else if (doc.doc_type === 'web_resources') {

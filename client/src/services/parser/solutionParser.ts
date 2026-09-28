@@ -20,6 +20,11 @@ import {
   FlowIntegration,
   FlowTriggerDetail,
   HardcodedLiteral,
+  BusinessRule,
+  BusinessRuleCondition,
+  BusinessRuleAction,
+  SecurityRole,
+  SecurityRoleTablePrivilege,
 } from '../../types/solution';
 import { analyzeJavaScript } from './jsAnalyzer';
 import {
@@ -119,6 +124,584 @@ export function parseSolutionXml(xmlText: string): SolutionMetadata {
   };
 }
 
+export function normalizeOperator(op: string): string {
+  const o = (op || '').toLowerCase().trim();
+  if (['eq', 'equal', 'equals', '==', 'isequalto'].includes(o)) return 'equals';
+  if (['ne', 'notequal', 'doesnotequal', 'not-equal', '!=', 'isnotequalto'].includes(o)) return 'does not equal';
+  if (['gt', 'greaterthan', '>', 'isgreaterthan'].includes(o)) return 'is greater than';
+  if (['ge', 'greaterthanequal', '>=', 'isgreaterthanorequalto'].includes(o)) return 'is greater than or equal to';
+  if (['lt', 'lessthan', '<', 'islessthan'].includes(o)) return 'is less than';
+  if (['le', 'lessthanequal', '<=', 'islessthanorequalto'].includes(o)) return 'is less than or equal to';
+  if (['contains', 'like'].includes(o)) return 'contains';
+  if (['doesnotcontain', 'notcontains', 'not-contains'].includes(o)) return 'does not contain';
+  if (['beginswith', 'startswith', 'begins-with'].includes(o)) return 'begins with';
+  if (['endswith', 'ends-with'].includes(o)) return 'ends with';
+  if (['null', 'isnull', 'doesnotcontaindata', 'empty', 'does-not-contain-data'].includes(o)) return 'does not contain data';
+  if (['notnull', 'isnotnull', 'containsdata', 'notempty', 'contains-data'].includes(o)) return 'contains data';
+  return op || 'equals';
+}
+
+export function normalizeActionType(actionType: string): string {
+  const at = (actionType || '').toLowerCase().trim();
+  if (at.includes('error') || at.includes('notification')) return 'Show error';
+  if (at.includes('required')) return 'Set required';
+  if (at.includes('visib') || at.includes('display') || at.includes('show') || at.includes('hide')) return 'Set visibility';
+  if (at.includes('lock') || at.includes('disable') || at.includes('read-only') || at.includes('readonly')) return 'Lock';
+  if (at.includes('unlock') || at.includes('enable')) return 'Lock';
+  if (at.includes('recomm')) return 'Recommendation';
+  if (at.includes('value') || at.includes('set') || at.includes('default') || at.includes('clear')) return 'Set value';
+  return 'Set value';
+}
+
+export function normalizePrivilegeDepth(level: string): 'None' | 'User' | 'BU' | 'Parent' | 'Org' {
+  const l = (level || '').toLowerCase().trim();
+  if (['global', 'organization', 'org', '4'].includes(l)) return 'Org';
+  if (['deep', 'parentchild', 'parent_child', 'parent', '3'].includes(l)) return 'Parent';
+  if (['local', 'businessunit', 'business_unit', 'bu', '2'].includes(l)) return 'BU';
+  if (['basic', 'user', '1'].includes(l)) return 'User';
+  return 'None';
+}
+
+export function parseRoleElement(
+  roleEl: Element,
+  entities: DataverseEntity[] = [],
+  roleToAppMap?: Map<string, Set<string>>
+): SecurityRole {
+  const rawId = roleEl.getAttribute('id') || roleEl.getAttribute('roleid') || `role_${Date.now()}`;
+  const cleanId = rawId.replace(/[{}]/g, '').toLowerCase();
+  const roleName = roleEl.getAttribute('name') || getElementText(roleEl, 'name') || 'Unnamed Role';
+  const roleDesc =
+    roleEl.getAttribute('description') ||
+    getLocalizedDescription(roleEl, 'Descriptions', '') ||
+    getElementText(roleEl, 'description') ||
+    '';
+  const buId = getElementText(roleEl, 'BusinessUnitId');
+  const buScope = buId ? 'Business Unit' : 'Organization / Root';
+
+  const privEls = roleEl.querySelectorAll('RolePrivileges > RolePrivilege, roleprivileges > roleprivilege');
+  const tablePrivMap = new Map<string, SecurityRoleTablePrivilege>();
+  const miscPrivileges: string[] = [];
+
+  const tablePrivRegex = /^prv(Create|Read|Write|Delete|AppendTo|Append|Assign|Share)(.+)$/i;
+
+  for (let j = 0; j < privEls.length; j++) {
+    const pEl = privEls[j];
+    const privName = pEl.getAttribute('name') || '';
+    const level = pEl.getAttribute('level') || 'None';
+    const depth = normalizePrivilegeDepth(level);
+
+    const match = privName.match(tablePrivRegex);
+    if (match) {
+      const verb = match[1].toLowerCase();
+      const rawTable = match[2];
+      const tableLogical = rawTable.toLowerCase();
+
+      if (!tablePrivMap.has(tableLogical)) {
+        const ent = entities.find((e) => e.logical_name.toLowerCase() === tableLogical);
+        tablePrivMap.set(tableLogical, {
+          table: tableLogical,
+          table_display_name: ent?.display_name || rawTable,
+          create: 'None',
+          read: 'None',
+          write: 'None',
+          delete: 'None',
+          append: 'None',
+          append_to: 'None',
+          assign: 'None',
+          share: 'None',
+        });
+      }
+
+      const privRecord = tablePrivMap.get(tableLogical)!;
+      if (verb === 'create') privRecord.create = depth;
+      else if (verb === 'read') privRecord.read = depth;
+      else if (verb === 'write') privRecord.write = depth;
+      else if (verb === 'delete') privRecord.delete = depth;
+      else if (verb === 'append') privRecord.append = depth;
+      else if (verb === 'appendto') privRecord.append_to = depth;
+      else if (verb === 'assign') privRecord.assign = depth;
+      else if (verb === 'share') privRecord.share = depth;
+    } else {
+      if (privName) {
+        miscPrivileges.push(privName);
+      }
+    }
+  }
+
+  const assignedApps =
+    roleToAppMap && roleToAppMap.has(cleanId)
+      ? Array.from(roleToAppMap.get(cleanId)!)
+      : [];
+
+  return {
+    id: rawId,
+    name: roleName,
+    business_unit: buScope,
+    description: roleDesc,
+    table_privileges: Array.from(tablePrivMap.values()),
+    misc_privileges: miscPrivileges,
+    assigned_apps: assignedApps,
+  };
+}
+
+
+export const COMMON_SYSTEM_FIELD_LABELS: Record<string, string> = {
+  ownerid: 'Owner',
+  createdby: 'Created By',
+  modifiedby: 'Modified By',
+  createdon: 'Created On',
+  modifiedon: 'Modified On',
+  statecode: 'Status',
+  statuscode: 'Status Reason',
+  owningbusinessunit: 'Owning Business Unit',
+  owninguser: 'Owning User',
+  owningteam: 'Owning Team',
+};
+
+export function getFieldDisplayName(
+  field: string,
+  entityAttrs?: Map<string, { display_name: string; options?: OptionSetItem[] }>
+): string {
+  const lower = (field || '').toLowerCase().trim();
+  const attrInfo = entityAttrs?.get(lower);
+  if (attrInfo && attrInfo.display_name && attrInfo.display_name.toLowerCase() !== lower) {
+    return attrInfo.display_name;
+  }
+  return COMMON_SYSTEM_FIELD_LABELS[lower] || attrInfo?.display_name || field;
+}
+
+export function parseXamlVariables(xamlText: string | undefined): Map<string, string> {
+  const varMap = new Map<string, string>();
+  if (!xamlText || !xamlText.trim()) return varMap;
+
+  // 1. ActivityReference EvaluateExpression blocks
+  const activityRefRegex =
+    /<mxswa:ActivityReference[^>]*AssemblyQualifiedName="[^"]*EvaluateExpression[^"]*"[^>]*>([\s\S]*?)<\/mxswa:ActivityReference>/gi;
+  for (const match of xamlText.matchAll(activityRefRegex)) {
+    const block = match[1];
+
+    const resultMatch =
+      block.match(/<OutArgument[^>]*x:Key="Result"[^>]*>([\s\S]*?)<\/OutArgument>/i) ||
+      block.match(/Result="\[?([a-zA-Z0-9_]+)\]?"/i);
+    let varName = '';
+    if (resultMatch) {
+      const inner = resultMatch[1];
+      const nameM =
+        inner.match(/\[([a-zA-Z0-9_]+)\]/) ||
+        inner.match(/Name="([a-zA-Z0-9_]+)"/) ||
+        inner.match(/([a-zA-Z0-9_]+)/);
+      if (nameM) varName = nameM[1].trim();
+    }
+    if (!varName) continue;
+
+    const opMatch = block.match(/<InArgument[^>]*x:Key="ExpressionOperator"[^>]*>([^<]+)<\/InArgument>/i);
+    const op = opMatch ? opMatch[1].trim() : '';
+
+    if (op.toLowerCase() === 'clear') {
+      varMap.set(varName.toLowerCase(), 'Clear Value');
+      continue;
+    }
+
+    const paramsMatch = block.match(/<InArgument[^>]*x:Key="Parameters"[^>]*>([\s\S]*?)<\/InArgument>/i);
+    const paramsText = paramsMatch ? paramsMatch[1].trim() : '';
+
+    if (
+      !paramsText ||
+      paramsText.includes('WorkflowPropertyType.Null') ||
+      paramsText.includes('Null,') ||
+      paramsText.trim() === '[New Object() {}]'
+    ) {
+      varMap.set(varName.toLowerCase(), 'Clear Value');
+      continue;
+    }
+
+    const entRefMatch =
+      paramsText.match(
+        /(?:ObjectId\.EntityLogicalName|EntityReference|Lookup)[^"]*"([a-zA-Z0-9_]+)"(?:\s*,\s*"([^"]+)")?(?:\s*,\s*"([^"]+)")?/i
+      ) || paramsText.match(/"(systemuser|team|account|contact|queue)"(?:\s*,\s*"([^"]+)")?(?:\s*,\s*"([^"]+)")?/i);
+    if (entRefMatch) {
+      const entType = entRefMatch[1];
+      const second = entRefMatch[2];
+      const third = entRefMatch[3];
+      const label = entType === 'systemuser' ? 'User' : entType === 'team' ? 'Team' : entType;
+      if (third && !third.match(/^[0-9a-fA-F-]{36}$/)) {
+        varMap.set(varName.toLowerCase(), `${third} (${label})`);
+      } else if (second && !second.match(/^[0-9a-fA-F-]{36}$/)) {
+        varMap.set(varName.toLowerCase(), `${second} (${label})`);
+      } else {
+        varMap.set(varName.toLowerCase(), `${label} (${entType})`);
+      }
+      continue;
+    }
+
+    const propMatch =
+      paramsText.match(/WorkflowPropertyType\.[a-zA-Z0-9_]+\s*,\s*"([^"]*)"/i) ||
+      paramsText.match(/WorkflowPropertyType\.[a-zA-Z0-9_]+\s*,\s*([0-9.]+)/i);
+    if (propMatch) {
+      varMap.set(varName.toLowerCase(), propMatch[1]);
+      continue;
+    }
+
+    const quoted = [...paramsText.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+    const filtered = quoted.filter(
+      (s) =>
+        ![
+          'String',
+          'Integer',
+          'OptionSetValue',
+          'Boolean',
+          'Decimal',
+          'Money',
+          'EntityReference',
+          'CreateCrmType',
+          'DateTime',
+        ].includes(s)
+    );
+    if (filtered.length > 0) {
+      varMap.set(varName.toLowerCase(), filtered[filtered.length - 1]);
+      continue;
+    }
+
+    const numMatch = paramsText.match(/,\s*([0-9.]+)\s*}/);
+    if (numMatch) {
+      varMap.set(varName.toLowerCase(), numMatch[1]);
+      continue;
+    }
+
+    varMap.set(varName.toLowerCase(), 'Set value');
+  }
+
+  // 2. GetEntityProperty -> variable mapping (copying from another field)
+  const getMatches = [
+    ...xamlText.matchAll(
+      /<mxswa:GetEntityProperty[^>]*Attribute="([^"]+)"[\s\S]*?(?:Result="\[?([a-zA-Z0-9_]+)\]?"|<OutArgument[^>]*>\s*\[?([a-zA-Z0-9_]+)\]?\s*<\/OutArgument>)/gi
+    ),
+  ];
+  for (const m of getMatches) {
+    const attr = m[1];
+    const resVar = (m[2] || m[3] || '').trim();
+    if (resVar) {
+      varMap.set(resVar.toLowerCase(), `Field: ${attr}`);
+    }
+  }
+
+  // 3. Assign activities
+  const assignMatches = [
+    ...xamlText.matchAll(
+      /<Assign[^>]*>(?:[\s\S]*?<Assign\.To>\s*<OutArgument[^>]*>\s*\[?([a-zA-Z0-9_]+)\]?\s*<\/OutArgument>\s*<\/Assign\.To>[\s\S]*?<Assign\.Value>\s*<InArgument[^>]*>([\s\S]*?)<\/InArgument>\s*<\/Assign\.Value>|<Assign[^>]*To="\[?([a-zA-Z0-9_]+)\]?"[^>]*Value="([^"]*)"[^>]*>)/gi
+    ),
+  ];
+  for (const m of assignMatches) {
+    const varName = (m[1] || m[3] || '').trim();
+    const rawVal = (m[2] || m[4] || '').trim();
+    if (varName && rawVal) {
+      varMap.set(varName.toLowerCase(), rawVal.replace(/^"|"$/g, ''));
+    }
+  }
+
+  return varMap;
+}
+
+export function resolveActionValue(
+  rawVal: string,
+  targetField: string,
+  xamlVarMap: Map<string, string>,
+  entityAttrs: Map<string, { display_name: string; options?: OptionSetItem[] }>
+): string {
+  let val = (rawVal || '').trim();
+  const cleanKey = val.replace(/[\[\]]/g, '').trim().toLowerCase();
+
+  if (xamlVarMap.has(cleanKey)) {
+    val = xamlVarMap.get(cleanKey)!;
+  }
+
+  // If still matching a step variable token like [SetAttributeValueStep1_1]
+  if (/^\[?.*Step.*\]?$/i.test(val) || /^\[SetAttributeValueStep[^\]]*\]?$/i.test(val)) {
+    if (val.toLowerCase().includes('clear') || val.toLowerCase().includes('null')) {
+      val = 'Clear Value';
+    } else if (targetField.toLowerCase() === 'ownerid') {
+      val = 'User / Team (Owner)';
+    } else if (targetField.toLowerCase().includes('user') || targetField.toLowerCase().includes('owner')) {
+      val = 'User (systemuser)';
+    } else {
+      val = 'Set value';
+    }
+  }
+
+  const attrInfo = entityAttrs?.get(targetField.toLowerCase());
+  if (attrInfo?.options && val) {
+    const matchOpt = attrInfo.options.find(
+      (o) => String(o.value) === val || o.label.toLowerCase() === val.toLowerCase()
+    );
+    if (matchOpt) {
+      val = `${matchOpt.label} (${val})`;
+    }
+  }
+
+  return val;
+}
+
+export function parseBusinessRuleLogic(
+  clientDataStr: string,
+  xamlText: string | undefined,
+  entityAttrs: Map<string, { display_name: string; options?: OptionSetItem[] }>
+): {
+  conditions: BusinessRuleCondition[];
+  actions: BusinessRuleAction[];
+  else_actions: BusinessRuleAction[];
+} {
+  const conditions: BusinessRuleCondition[] = [];
+  const actions: BusinessRuleAction[] = [];
+  const else_actions: BusinessRuleAction[] = [];
+
+  const xamlVarMap = parseXamlVariables(xamlText);
+
+  if (clientDataStr && clientDataStr.trim()) {
+    try {
+      const data = JSON.parse(clientDataStr.trim());
+      const ruleList = Array.isArray(data) ? data : data.rules || data.steps || [data];
+
+      for (const ruleItem of ruleList) {
+        if (!ruleItem || typeof ruleItem !== 'object') continue;
+
+        // 1. Conditions
+        const rawConds =
+          ruleItem.conditions || ruleItem.criteria || (ruleItem.type === 'condition' ? [ruleItem] : []);
+        const condList = Array.isArray(rawConds)
+          ? rawConds
+          : rawConds?.rules || rawConds?.conditions || [];
+
+        for (const cond of condList) {
+          const field =
+            cond.field ||
+            cond.attribute ||
+            cond.attributeName ||
+            cond.column ||
+            cond.targetAttribute ||
+            '';
+          if (!field) continue;
+          const op = normalizeOperator(cond.operator || cond.op || cond.conditionType || 'equals');
+          const rawVal =
+            cond.value !== undefined
+              ? String(cond.value)
+              : cond.val !== undefined
+              ? String(cond.val)
+              : '';
+
+          const fieldDisplayName = getFieldDisplayName(field, entityAttrs);
+          let displayVal = rawVal;
+          const attrInfo = entityAttrs.get(field.toLowerCase());
+          if (attrInfo?.options && rawVal) {
+            const matchOpt = attrInfo.options.find(
+              (o) => String(o.value) === rawVal || o.label.toLowerCase() === rawVal.toLowerCase()
+            );
+            if (matchOpt) {
+              displayVal = `${matchOpt.label} (${rawVal})`;
+            }
+          }
+
+          conditions.push({
+            field,
+            field_display_name: fieldDisplayName,
+            operator: op,
+            value: displayVal,
+            logical_join: cond.logicalJoin || cond.join || (cond.type === 'or' ? 'OR' : 'AND'),
+          });
+        }
+
+        // 2. Actions (THEN branch)
+        const rawActions =
+          ruleItem.actions || ruleItem.thenActions || (ruleItem.type === 'action' ? [ruleItem] : []);
+        const actionList = Array.isArray(rawActions) ? rawActions : [];
+        for (const act of actionList) {
+          const targetField =
+            act.targetField ||
+            act.field ||
+            act.attribute ||
+            act.target ||
+            act.targetAttribute ||
+            '';
+          if (!targetField && !act.message && !act.valueOrMessage) continue;
+          const targetDisplayName = getFieldDisplayName(targetField, entityAttrs);
+
+          const actionType = normalizeActionType(act.actionType || act.type || act.action || '');
+          let valMsg =
+            act.valueOrMessage ||
+            act.message ||
+            act.value !== undefined
+              ? String(act.valueOrMessage || act.message || act.value)
+              : '';
+
+          if (!valMsg) {
+            if (actionType === 'Set required') valMsg = 'Business Required';
+            else if (actionType === 'Lock') valMsg = 'Read-only';
+            else if (actionType === 'Set visibility') valMsg = 'Visible';
+          }
+
+          valMsg = resolveActionValue(valMsg, targetField, xamlVarMap, entityAttrs);
+
+          actions.push({
+            action_type: actionType,
+            target_field: targetField,
+            target_field_display_name: targetDisplayName,
+            value_or_message: valMsg,
+          });
+        }
+
+        // 3. Else Actions (ELSE branch)
+        const rawElseActions =
+          ruleItem.elseActions || ruleItem.else_actions || ruleItem.otherwiseActions || [];
+        const elseActionList = Array.isArray(rawElseActions) ? rawElseActions : [];
+        for (const act of elseActionList) {
+          const targetField =
+            act.targetField ||
+            act.field ||
+            act.attribute ||
+            act.target ||
+            act.targetAttribute ||
+            '';
+          if (!targetField && !act.message && !act.valueOrMessage) continue;
+          const targetDisplayName = getFieldDisplayName(targetField, entityAttrs);
+
+          const actionType = normalizeActionType(act.actionType || act.type || act.action || '');
+          let valMsg =
+            act.valueOrMessage ||
+            act.message ||
+            act.value !== undefined
+              ? String(act.valueOrMessage || act.message || act.value)
+              : '';
+
+          if (!valMsg) {
+            if (actionType === 'Set required') valMsg = 'Optional';
+            else if (actionType === 'Lock') valMsg = 'Editable';
+            else if (actionType === 'Set visibility') valMsg = 'Hidden';
+          }
+
+          valMsg = resolveActionValue(valMsg, targetField, xamlVarMap, entityAttrs);
+
+          else_actions.push({
+            action_type: actionType,
+            target_field: targetField,
+            target_field_display_name: targetDisplayName,
+            value_or_message: valMsg,
+          });
+        }
+      }
+    } catch {
+      // ignore JSON parse errors, fallback to XAML if available
+    }
+  }
+
+  // Fallback or complement with XAML parsing if available
+  if (xamlText && xamlText.trim()) {
+    try {
+      const getMatches = [...xamlText.matchAll(/<mxswa:GetEntityProperty[^>]*Attribute="([^"]+)"[^>]*>/gi)];
+      for (const m of getMatches) {
+        const field = m[1];
+        if (field && !conditions.some((c) => c.field.toLowerCase() === field.toLowerCase())) {
+          conditions.push({
+            field,
+            field_display_name: getFieldDisplayName(field, entityAttrs),
+            operator: 'equals',
+            value: '',
+            logical_join: 'AND',
+          });
+        }
+      }
+
+      const elseSplit = xamlText.split(/<If\.Else>|<Else>/i);
+      const thenPart = elseSplit[0] || '';
+      const elsePart = elseSplit[1] || '';
+
+      const setMatchesThen = [...thenPart.matchAll(/<mxswa:SetEntityProperty[^>]*Attribute="([^"]+)"[^>]*Value="([^"]*)"/gi)];
+      for (const m of setMatchesThen) {
+        const targetField = m[1];
+        const rawVal = m[2];
+        const resolvedVal = resolveActionValue(rawVal, targetField, xamlVarMap, entityAttrs);
+        const targetDisplayName = getFieldDisplayName(targetField, entityAttrs);
+
+        const existing = actions.find((a) => a.target_field.toLowerCase() === targetField.toLowerCase());
+        if (existing) {
+          // If existing value is empty or looks like an unexpanded token, update it
+          if (!existing.value_or_message || /^\[?.*Step.*\]?$/i.test(existing.value_or_message)) {
+            existing.value_or_message = resolvedVal;
+          }
+        } else {
+          actions.push({
+            action_type: 'Set value',
+            target_field: targetField,
+            target_field_display_name: targetDisplayName,
+            value_or_message: resolvedVal,
+          });
+        }
+      }
+
+      const dispMatchesThen = [...thenPart.matchAll(/<mxswa:SetDisplayMode[^>]*Attribute="([^"]+)"[^>]*DisplayMode="([^"]*)"/gi)];
+      for (const m of dispMatchesThen) {
+        const targetField = m[1];
+        const mode = m[2];
+        const isLock = mode.toLowerCase().includes('disable') || mode.toLowerCase().includes('lock') || mode.toLowerCase().includes('read');
+        const targetDisplayName = getFieldDisplayName(targetField, entityAttrs);
+
+        const existing = actions.find((a) => a.target_field.toLowerCase() === targetField.toLowerCase());
+        if (!existing) {
+          actions.push({
+            action_type: isLock ? 'Lock' : 'Set visibility',
+            target_field: targetField,
+            target_field_display_name: targetDisplayName,
+            value_or_message: mode,
+          });
+        }
+      }
+
+      const notifMatchesThen = [...thenPart.matchAll(/<mxswa:ShowNotification[^>]*Message="([^"]*)"[^>]*TargetAttribute="([^"]*)"/gi)];
+      for (const m of notifMatchesThen) {
+        const msg = m[1];
+        const targetField = m[2];
+        const targetDisplayName = getFieldDisplayName(targetField, entityAttrs);
+
+        const existing = actions.find((a) => a.target_field.toLowerCase() === targetField.toLowerCase() && a.action_type === 'Show error');
+        if (!existing) {
+          actions.push({
+            action_type: 'Show error',
+            target_field: targetField,
+            target_field_display_name: targetDisplayName,
+            value_or_message: msg,
+          });
+        }
+      }
+
+      if (elsePart) {
+        const setMatchesElse = [...elsePart.matchAll(/<mxswa:SetEntityProperty[^>]*Attribute="([^"]+)"[^>]*Value="([^"]*)"/gi)];
+        for (const m of setMatchesElse) {
+          const targetField = m[1];
+          const rawVal = m[2];
+          const resolvedVal = resolveActionValue(rawVal, targetField, xamlVarMap, entityAttrs);
+          const targetDisplayName = getFieldDisplayName(targetField, entityAttrs);
+
+          const existing = else_actions.find((a) => a.target_field.toLowerCase() === targetField.toLowerCase());
+          if (existing) {
+            if (!existing.value_or_message || /^\[?.*Step.*\]?$/i.test(existing.value_or_message)) {
+              existing.value_or_message = resolvedVal;
+            }
+          } else {
+            else_actions.push({
+              action_type: 'Set value',
+              target_field: targetField,
+              target_field_display_name: targetDisplayName,
+              value_or_message: resolvedVal,
+            });
+          }
+        }
+      }
+    } catch {
+      // ignore XAML parsing error
+    }
+  }
+
+  return { conditions, actions, else_actions };
+}
+
 export function parseCustomizationsXml(xmlText: string): {
   entities: DataverseEntity[];
   optionSets: OptionSet[];
@@ -134,6 +717,9 @@ export function parseCustomizationsXml(xmlText: string): {
     fileName?: string;
   }>;
   formEventHandlers: FormEventHandler[];
+  businessRules: BusinessRule[];
+  securityRoles: SecurityRole[];
+  formsCatalog: Map<string, { id: string; name: string; entityLogicalName: string }>;
 } {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
@@ -141,6 +727,7 @@ export function parseCustomizationsXml(xmlText: string): {
   const entities: DataverseEntity[] = [];
   const optionSets: OptionSet[] = [];
   const formEventHandlers: FormEventHandler[] = [];
+  const formsCatalog = new Map<string, { id: string; name: string; entityLogicalName: string }>();
 
   // Parse Global Option Sets
   const globalOptionSetEls = doc.querySelectorAll('OptionSets > OptionSet');
@@ -308,6 +895,9 @@ export function parseCustomizationsXml(xmlText: string): {
         formEl.querySelector('name')?.textContent?.trim() ||
         'Main Form';
 
+      const cleanFormId = formId.replace(/[{}]/g, '').toLowerCase();
+      formsCatalog.set(cleanFormId, { id: cleanFormId, name: formName, entityLogicalName: logicalName });
+
       const eventEls = formEl.querySelectorAll('events > event');
       for (let ev = 0; ev < eventEls.length; ev++) {
         const eventEl = eventEls[ev];
@@ -345,6 +935,8 @@ export function parseCustomizationsXml(xmlText: string): {
       }
     }
 
+    const viewEls = entityEl.querySelectorAll('SavedQueries > savedquery, savedqueries > savedquery');
+
     entities.push({
       logical_name: logicalName,
       schema_name: entityEl.getAttribute('Name') || logicalName,
@@ -354,6 +946,8 @@ export function parseCustomizationsXml(xmlText: string): {
       primary_name_attribute: primaryNameAttr,
       attributes,
       relationships,
+      forms_count: formEls.length,
+      views_count: viewEls.length,
     });
   }
 
@@ -403,17 +997,112 @@ export function parseCustomizationsXml(xmlText: string): {
     }
   }
 
-  // Workflows (Cloud Flows) defined in customizations.xml
+  // Workflows (Cloud Flows & Business Rules) defined in customizations.xml
   const workflowNames = new Map<string, string>();
+  const businessRules: BusinessRule[] = [];
   const workflowEls = doc.querySelectorAll('Workflows > Workflow');
   for (let i = 0; i < workflowEls.length; i++) {
     const wf = workflowEls[i];
-    const wfId = wf.getAttribute('WorkflowId')?.replace(/[{}]/g, '').toLowerCase();
+    const wfId = wf.getAttribute('WorkflowId')?.replace(/[{}]/g, '').toLowerCase() || `wf_${i}`;
     const wfName =
       wf.getAttribute('Name') ||
+      getLocalizedDescription(wf, 'LocalizedNames', '') ||
       wf.querySelector('LocalizedNames > LocalizedName[languagecode="1033"]')?.getAttribute('description') ||
-      wf.querySelector('LocalizedNames > LocalizedName')?.getAttribute('description');
-    if (wfId && wfName) {
+      wf.querySelector('LocalizedNames > LocalizedName')?.getAttribute('description') ||
+      getElementText(wf, 'Name') ||
+      `Workflow_${i}`;
+
+    const category = wf.getAttribute('Category') || getElementText(wf, 'Category') || '';
+    const isBusinessRule = category === '2';
+
+    if (isBusinessRule) {
+      const primaryEntity =
+        wf.getAttribute('PrimaryEntity') ||
+        getElementText(wf, 'PrimaryEntity') ||
+        '';
+      const desc =
+        getLocalizedDescription(wf, 'Descriptions', '') ||
+        wf.getAttribute('Description') ||
+        getElementText(wf, 'Description') ||
+        '';
+      const stateCode = wf.getAttribute('StateCode') || getElementText(wf, 'StateCode') || '';
+      const statusCode = wf.getAttribute('StatusCode') || getElementText(wf, 'StatusCode') || '';
+      const state: 'Active' | 'Draft' = stateCode === '1' || statusCode === '2' ? 'Active' : 'Draft';
+      const scopeRaw = wf.getAttribute('Scope') || getElementText(wf, 'Scope') || '';
+      const formId = wf.getAttribute('FormId') || getElementText(wf, 'FormId') || '';
+      const clientData = getElementText(wf, 'ClientData') || wf.querySelector('ClientData')?.textContent || '';
+      const xamlText = getElementText(wf, 'Xaml') || wf.querySelector('Xaml')?.textContent || '';
+
+      const entity = entities.find((e) => e.logical_name.toLowerCase() === primaryEntity.toLowerCase());
+      const entityAttrs = new Map<string, { display_name: string; options?: OptionSetItem[] }>();
+      if (entity) {
+        for (const a of entity.attributes) {
+          entityAttrs.set(a.logical_name.toLowerCase(), {
+            display_name: a.display_name,
+            options: a.options,
+          });
+        }
+      }
+
+      const { conditions, actions, else_actions } = parseBusinessRuleLogic(clientData, xamlText, entityAttrs);
+
+      let scope = 'Entity';
+      const cleanFormId = formId.replace(/[{}]/g, '').toLowerCase();
+      const matchedForm = cleanFormId ? formsCatalog.get(cleanFormId) : undefined;
+
+      if (matchedForm) {
+        scope = matchedForm.name;
+      } else if (scopeRaw === '4' || scopeRaw.toLowerCase() === 'entity') {
+        scope = 'Entity';
+      } else if (scopeRaw === '1' || scopeRaw.toLowerCase() === 'all forms' || scopeRaw.toLowerCase() === 'allforms') {
+        scope = 'All Forms';
+      } else if (cleanFormId) {
+        scope = `Form: ${cleanFormId}`;
+      }
+
+      const appliesToForms: string[] = [];
+      if (matchedForm) {
+        appliesToForms.push(matchedForm.name);
+      } else {
+        const tableForms = Array.from(formsCatalog.values()).filter(
+          (f) => f.entityLogicalName.toLowerCase() === primaryEntity.toLowerCase()
+        );
+        if (scope === 'Entity') {
+          appliesToForms.push('All Forms (Entity scope – runs on all client forms and server-side)');
+          for (const tf of tableForms) {
+            if (!appliesToForms.includes(tf.name)) appliesToForms.push(tf.name);
+          }
+        } else if (tableForms.length > 0) {
+          for (const tf of tableForms) {
+            appliesToForms.push(tf.name);
+          }
+        } else {
+          appliesToForms.push('All Forms');
+        }
+      }
+
+      const fieldsRead = Array.from(new Set(conditions.map((c) => c.field).filter(Boolean)));
+      const fieldsWritten = Array.from(
+        new Set([...actions.map((a) => a.target_field), ...else_actions.map((a) => a.target_field)].filter(Boolean))
+      );
+
+      businessRules.push({
+        id: wfId,
+        name: wfName,
+        logical_name: wf.getAttribute('Name') || wfName,
+        table: primaryEntity,
+        table_display_name: entity?.display_name || primaryEntity,
+        scope,
+        state,
+        description: desc,
+        conditions,
+        actions,
+        else_actions,
+        fields_read: fieldsRead,
+        fields_written: fieldsWritten,
+        applies_to_forms: appliesToForms,
+      });
+    } else if (wfId && wfName) {
       workflowNames.set(wfId, wfName);
     }
   }
@@ -453,7 +1142,51 @@ export function parseCustomizationsXml(xmlText: string): {
     });
   }
 
-  return { entities, optionSets, siteMap, workflowNames, webResourceCatalog, formEventHandlers };
+  // Parse AppModules to map role assignments to apps
+  const roleToAppMap = new Map<string, Set<string>>();
+  const appModuleEls = doc.querySelectorAll('AppModules > AppModule, appmodules > appmodule');
+  for (let i = 0; i < appModuleEls.length; i++) {
+    const appEl = appModuleEls[i];
+    const appName =
+      getLocalizedDescription(appEl, 'LocalizedNames', '') ||
+      getElementText(appEl, 'UniqueName') ||
+      getElementText(appEl, 'uniquename') ||
+      `App_${i + 1}`;
+
+    const roleEls = appEl.querySelectorAll('AppModuleRoles > AppModuleRole, AppModuleRoles > Role, appmoduleroles > appmodulerole, appmoduleroles > role');
+    for (let j = 0; j < roleEls.length; j++) {
+      const rId = (roleEls[j].getAttribute('roleid') || roleEls[j].getAttribute('id') || '')
+        .replace(/[{}]/g, '')
+        .toLowerCase();
+      if (rId) {
+        if (!roleToAppMap.has(rId)) {
+          roleToAppMap.set(rId, new Set<string>());
+        }
+        roleToAppMap.get(rId)!.add(appName);
+      }
+    }
+  }
+
+  // Parse Security Roles defined in customizations.xml
+  const securityRoles: SecurityRole[] = [];
+  const roleEls = doc.querySelectorAll('Roles > Role, roles > role');
+  for (let i = 0; i < roleEls.length; i++) {
+    const roleEl = roleEls[i];
+    const parsedRole = parseRoleElement(roleEl, entities, roleToAppMap);
+    securityRoles.push(parsedRole);
+  }
+
+  return {
+    entities,
+    optionSets,
+    siteMap,
+    workflowNames,
+    webResourceCatalog,
+    formEventHandlers,
+    businessRules,
+    securityRoles,
+    formsCatalog,
+  };
 }
 
 /**
@@ -733,6 +1466,8 @@ export async function unpackAndParseSolution(
   let optionSets: OptionSet[] = [];
   let siteMap: SiteMap | undefined;
   let workflowNames = new Map<string, string>();
+  let businessRules: BusinessRule[] = [];
+  let securityRoles: SecurityRole[] = [];
 
   const customizationsXmlFile = zip.file('customizations.xml');
   if (customizationsXmlFile) {
@@ -742,6 +1477,8 @@ export async function unpackAndParseSolution(
     optionSets = parsedCustomizations.optionSets;
     siteMap = parsedCustomizations.siteMap;
     workflowNames = parsedCustomizations.workflowNames;
+    businessRules = parsedCustomizations.businessRules;
+    securityRoles = parsedCustomizations.securityRoles;
     var webResourceCatalog = parsedCustomizations.webResourceCatalog;
     var formEventHandlers = parsedCustomizations.formEventHandlers;
   } else {
@@ -776,6 +1513,129 @@ export async function unpackAndParseSolution(
 
       const parsedFlow = parseWorkflowJson(baseName, text, friendlyName);
       flows.push(parsedFlow);
+    }
+  }
+
+  // 3.5. Business Rules XAML files in Workflows/ or portablebusinesslogics/
+  const xamlFiles = Object.keys(zip.files).filter(
+    (f) =>
+      (f.toLowerCase().startsWith('workflows/') || f.toLowerCase().startsWith('portablebusinesslogics/')) &&
+      f.toLowerCase().endsWith('.xaml')
+  );
+
+  for (const xamlPath of xamlFiles) {
+    const file = zip.file(xamlPath);
+    if (file) {
+      try {
+        const xamlText = await file.async('text');
+        const baseName = xamlPath.split('/').pop()?.replace(/\.xaml$/i, '') || '';
+        const existing = businessRules.find(
+          (b) =>
+            b.id.toLowerCase().includes(baseName.toLowerCase()) ||
+            baseName.toLowerCase().includes(b.id.toLowerCase()) ||
+            b.name.toLowerCase().replace(/[^a-z0-9]+/g, '').includes(baseName.toLowerCase().replace(/[^a-z0-9]+/g, ''))
+        );
+        if (existing) {
+          if (existing.conditions.length === 0 && existing.actions.length === 0) {
+            const entity = entities.find((e) => e.logical_name.toLowerCase() === existing.table.toLowerCase());
+            const entityAttrs = new Map<string, { display_name: string; options?: OptionSetItem[] }>();
+            if (entity) {
+              for (const a of entity.attributes) {
+                entityAttrs.set(a.logical_name.toLowerCase(), {
+                  display_name: a.display_name,
+                  options: a.options,
+                });
+              }
+            }
+            const logic = parseBusinessRuleLogic('', xamlText, entityAttrs);
+            existing.conditions = logic.conditions;
+            existing.actions = logic.actions;
+            existing.else_actions = logic.else_actions;
+            existing.fields_read = Array.from(new Set(logic.conditions.map((c) => c.field)));
+            existing.fields_written = Array.from(
+              new Set([...logic.actions.map((a) => a.target_field), ...logic.else_actions.map((a) => a.target_field)])
+            );
+          }
+        }
+      } catch (e) {
+        console.warn(`Error reading XAML file ${xamlPath}:`, e);
+      }
+    }
+  }
+
+  // 3.6 Unpacked Roles and AppModule files: Roles/**/*.xml, AppModules/**/*.xml
+  const roleFiles = Object.keys(zip.files).filter(
+    (f) => f.toLowerCase().startsWith('roles/') && f.toLowerCase().endsWith('.xml')
+  );
+
+  if (roleFiles.length > 0) {
+    const parser = new DOMParser();
+    for (const rPath of roleFiles) {
+      const file = zip.file(rPath);
+      if (file) {
+        try {
+          const roleXml = await file.async('text');
+          const rDoc = parser.parseFromString(roleXml, 'application/xml');
+          const rEls = rDoc.querySelectorAll('Role, role');
+          for (let i = 0; i < rEls.length; i++) {
+            const parsed = parseRoleElement(rEls[i], entities);
+            const exists = securityRoles.some(
+              (sr) =>
+                sr.id.replace(/[{}]/g, '').toLowerCase() === parsed.id.replace(/[{}]/g, '').toLowerCase() ||
+                sr.name.toLowerCase() === parsed.name.toLowerCase()
+            );
+            if (!exists) {
+              securityRoles.push(parsed);
+            }
+          }
+        } catch (e) {
+          console.warn(`Error parsing role file ${rPath}:`, e);
+        }
+      }
+    }
+  }
+
+  // Scan unpacked AppModules/**/*.xml to augment assigned_apps
+  const appModuleFiles = Object.keys(zip.files).filter(
+    (f) => f.toLowerCase().startsWith('appmodules/') && f.toLowerCase().endsWith('.xml')
+  );
+
+  if (appModuleFiles.length > 0) {
+    const parser = new DOMParser();
+    for (const amPath of appModuleFiles) {
+      const file = zip.file(amPath);
+      if (file) {
+        try {
+          const amXml = await file.async('text');
+          const amDoc = parser.parseFromString(amXml, 'application/xml');
+          const amEl = amDoc.querySelector('AppModule, appmodule');
+          if (amEl) {
+            const appName =
+              getLocalizedDescription(amEl, 'LocalizedNames', '') ||
+              getElementText(amEl, 'UniqueName') ||
+              getElementText(amEl, 'uniquename') ||
+              amPath.split('/')[1] ||
+              'App';
+
+            const roleEls = amEl.querySelectorAll('AppModuleRoles > AppModuleRole, AppModuleRoles > Role, appmoduleroles > appmodulerole, appmoduleroles > role');
+            for (let j = 0; j < roleEls.length; j++) {
+              const rId = (roleEls[j].getAttribute('roleid') || roleEls[j].getAttribute('id') || '')
+                .replace(/[{}]/g, '')
+                .toLowerCase();
+              if (rId) {
+                const targetRole = securityRoles.find(
+                  (sr) => sr.id.replace(/[{}]/g, '').toLowerCase() === rId
+                );
+                if (targetRole && !targetRole.assigned_apps.includes(appName)) {
+                  targetRole.assigned_apps.push(appName);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`Error parsing app module file ${amPath}:`, e);
+        }
+      }
     }
   }
 
@@ -925,10 +1785,83 @@ export async function unpackAndParseSolution(
   const canvasData = extractCanvasAppDependencies(canvasApps);
   const correlatedJsDeps = correlateFormEventDependencies(formEventHandlers, jsDependencies);
 
+  const brDependencies: ComponentDependency[] = [];
+  for (const br of businessRules) {
+    for (const f of br.fields_read) {
+      brDependencies.push({
+        id: `dep_br_${br.id}_${f}_read`,
+        source_type: 'formula',
+        source_id: br.id,
+        source_name: br.name,
+        location_detail: `Business Rule on ${br.table}`,
+        target_entity: br.table,
+        target_field: f,
+        operation_type: 'READ',
+        context_snippet: `Evaluated in condition of business rule "${br.name}"`,
+      });
+    }
+    for (const f of br.fields_written) {
+      brDependencies.push({
+        id: `dep_br_${br.id}_${f}_write`,
+        source_type: 'formula',
+        source_id: br.id,
+        source_name: br.name,
+        location_detail: `Business Rule on ${br.table}`,
+        target_entity: br.table,
+        target_field: f,
+        operation_type: 'WRITE',
+        context_snippet: `Modified by action in business rule "${br.name}"`,
+      });
+    }
+  }
+
+  const roleDependencies: ComponentDependency[] = [];
+  for (const role of securityRoles) {
+    for (const priv of role.table_privileges) {
+      const hasAnyPriv = [
+        priv.create,
+        priv.read,
+        priv.write,
+        priv.delete,
+        priv.append,
+        priv.append_to,
+        priv.assign,
+        priv.share,
+      ].some((lvl) => lvl !== 'None');
+
+      if (hasAnyPriv) {
+        roleDependencies.push({
+          id: `dep_role_${role.id.replace(/[{}]/g, '')}_${priv.table}`,
+          source_type: 'security_role',
+          source_id: role.id,
+          source_name: role.name,
+          location_detail: `Security Role: ${role.name}`,
+          target_entity: priv.table,
+          operation_type: priv.write !== 'None' || priv.create !== 'None' ? 'WRITE' : 'READ',
+          context_snippet: `Grants table privileges on ${priv.table_display_name || priv.table} (Create: ${priv.create}, Read: ${priv.read}, Write: ${priv.write}, Delete: ${priv.delete})`,
+        });
+      }
+    }
+    for (const app of role.assigned_apps) {
+      roleDependencies.push({
+        id: `dep_role_${role.id.replace(/[{}]/g, '')}_app_${app.replace(/[^a-zA-Z0-9_]/g, '_')}`,
+        source_type: 'security_role',
+        source_id: role.id,
+        source_name: role.name,
+        location_detail: `Security Role: ${role.name}`,
+        target_entity: app,
+        operation_type: 'READ',
+        context_snippet: `Assigned to application "${app}"`,
+      });
+    }
+  }
+
   const allDependencies: ComponentDependency[] = [
     ...flowData.dependencies,
     ...canvasData.dependencies,
     ...correlatedJsDeps,
+    ...brDependencies,
+    ...roleDependencies,
   ];
 
   const allLiterals: HardcodedLiteral[] = [
@@ -937,10 +1870,33 @@ export async function unpackAndParseSolution(
     ...jsLiterals,
   ];
 
-  // Calculate statistics
+  // Calculate statistics and refine counts
   let relationshipCount = 0;
   for (const e of entities) {
     relationshipCount += e.relationships.length;
+
+    // Check if zip contains unpacked folder paths: Entities/<name>/FormXml/ or Entities/<name>/SavedQueries/
+    const prefix = `entities/${e.logical_name.toLowerCase()}/`;
+    const formFiles = Object.keys(zip.files).filter(
+      (f) => f.toLowerCase().startsWith(prefix) && f.toLowerCase().includes('/formxml/') && f.toLowerCase().endsWith('.xml')
+    );
+    const viewFiles = Object.keys(zip.files).filter(
+      (f) => f.toLowerCase().startsWith(prefix) && f.toLowerCase().includes('/savedqueries/') && f.toLowerCase().endsWith('.xml')
+    );
+    if (formFiles.length > (e.forms_count || 0)) {
+      e.forms_count = formFiles.length;
+    }
+    if (viewFiles.length > (e.views_count || 0)) {
+      e.views_count = viewFiles.length;
+    }
+    // Also correlate with registered form event handlers
+    const matchedHandlers = formEventHandlers.filter(
+      (h) => h.entity_name.toLowerCase() === e.logical_name.toLowerCase()
+    );
+    const distinctForms = new Set(matchedHandlers.map((h) => h.form_id || h.form_name)).size;
+    if (distinctForms > (e.forms_count || 0)) {
+      e.forms_count = distinctForms;
+    }
   }
 
   const scriptCount = webResources.filter((w) => w.type === 'JavaScript').length;
@@ -959,6 +1915,8 @@ export async function unpackAndParseSolution(
     flow_integrations: flowData.integrations,
     flow_triggers: flowData.triggers,
     hardcoded_literals: allLiterals,
+    business_rules: businessRules,
+    security_roles: securityRoles,
     stats: {
       entity_count: entities.length,
       flow_count: flows.length,
@@ -966,6 +1924,8 @@ export async function unpackAndParseSolution(
       env_var_count: envVars.length,
       relationship_count: relationshipCount,
       option_set_count: optionSets.length,
+      business_rule_count: businessRules.length,
+      security_role_count: securityRoles.length,
       web_resource_count: webResources.length,
       script_count: scriptCount,
       dependency_count: allDependencies.length,

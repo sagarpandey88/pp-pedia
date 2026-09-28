@@ -57,29 +57,29 @@ export const AgentActivityTrail: React.FC<AgentActivityTrailProps> = ({
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-3.5 py-2 flex items-center justify-between bg-slate-900/70 hover:bg-slate-900 transition border-b border-slate-800/60 text-slate-300 font-medium select-none"
+        className="w-full px-3 py-2 flex items-center justify-between bg-slate-900/70 hover:bg-slate-900 transition border-b border-slate-800/60 text-slate-300 font-medium select-none gap-2"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           {runningStep ? (
-            <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
+            <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin flex-shrink-0" />
           ) : hasErrors ? (
-            <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+            <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
           ) : (
-            <Check className="w-3.5 h-3.5 text-emerald-400" />
+            <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
           )}
-          <span className="font-semibold text-slate-200">
+          <span className="font-semibold text-slate-200 truncate text-xs">
             {runningStep ? 'Agent Thinking & Tool Execution' : 'Agent Activity Trail'}
           </span>
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700/60">
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700/60 flex-shrink-0">
             {steps.length} {steps.length === 1 ? 'action' : 'actions'}
           </span>
           {runningStep && (
-            <span className="text-[11px] text-indigo-400 animate-pulse font-normal truncate max-w-xs">
+            <span className="text-[11px] text-indigo-400 animate-pulse font-normal truncate max-w-[120px] hidden sm:inline">
               {runningStep.label}...
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 text-[11px] text-slate-400">
+        <div className="flex items-center gap-1 text-[11px] text-slate-400 flex-shrink-0">
           <span>{isExpanded ? 'Hide' : 'Details'}</span>
           <ChevronDown
             className={`w-3.5 h-3.5 transition-transform duration-200 ${

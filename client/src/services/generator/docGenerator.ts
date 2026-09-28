@@ -1,7 +1,7 @@
-import { SolutionAST, DataverseEntity, CloudFlow, CanvasApp, FlowAction, FlowTrigger, TokenUsage } from '../../types/solution';
-import { cleanFlowDisplayName } from '../parser/solutionParser';
+import { SolutionAST, DataverseEntity, CloudFlow, CanvasApp, FlowAction, FlowTrigger, TokenUsage, BusinessRule, SecurityRole } from '../../types/solution';
+import { cleanFlowDisplayName, COMMON_SYSTEM_FIELD_LABELS } from '../parser/solutionParser';
 import { DocumentRecord } from '../../types/db';
-import { formatConnectionReference } from './connectorUtils';
+import { formatConnectionReference, extractConnectorsSummary } from './connectorUtils';
 import {
   buildOverviewPrompt,
   buildDataversePrompt,
@@ -111,88 +111,246 @@ async function callOpenAI(
 
 /**
  * Built-in deterministic markdown generator that builds rich documentation directly from AST
- * when no API key is provided or offline.
+ * when no API key is provided or offline. Generates the 8 standard overview sections:
+ * Overview, Component inventory, Apps, Automation, Data model, Connectors used,
+ * Environment variables, and Dependency highlights.
  */
 export function generateDeterministicOverview(ast: SolutionAST): string {
-  const eList = ast.entities.map((e) => `- **${e.display_name}** (\`${e.logical_name}\`): ${e.description || 'Dataverse table'}`).join('\n');
-  const fList = ast.flows.map((f) => `- **${cleanFlowDisplayName(f.display_name || f.name)}**: Automated workflow with ${f.triggers.length} triggers and ${f.actions.length} action steps.`).join('\n');
-  const aList = ast.canvas_apps.map((a) => `- **${a.display_name}**: Canvas application containing ${a.screens.length} screens.`).join('\n');
-  const vList = ast.environment_variables.map((v) => `- **${v.display_name}** (\`${v.schema_name}\`): ${v.type} variable (Default: \`${v.default_value || 'None'}\`)`).join('\n');
+  const totalColumns = ast.entities.reduce((acc, e) => acc + e.attributes.length, 0);
+  const connectors = extractConnectorsSummary(ast);
 
-  return `# ${ast.solution.display_name}
-## Architecture & Solution Overview
+  // Model-driven apps parsed from SiteMap
+  const modelDrivenApps: Array<{ title: string; groupsCount: number; subAreasCount: number }> = [];
+  if (ast.site_map?.areas) {
+    for (const area of ast.site_map.areas) {
+      const subCount = area.groups.reduce((acc, g) => acc + g.sub_areas.length, 0);
+      modelDrivenApps.push({
+        title: area.title || 'Model-Driven Application',
+        groupsCount: area.groups.length,
+        subAreasCount: subCount,
+      });
+    }
+  }
 
-### 1. Executive Summary
-**${ast.solution.display_name}** (Unique Name: \`${ast.solution.unique_name}\`, Version: \`${ast.solution.version}\`) is a Microsoft Power Platform solution configured as **${ast.solution.is_managed ? 'Managed' : 'Unmanaged'}**.
-${ast.solution.description ? `\n> ${ast.solution.description}\n` : ''}
+  // Count unique connection references across flows and connectors
+  const uniqueConnRefs = new Set<string>();
+  for (const f of ast.flows) {
+    for (const r of f.connection_references) {
+      if (r.logical_name) uniqueConnRefs.add(r.logical_name);
+    }
+  }
+  for (const c of connectors) {
+    for (const r of c.connectionReferences) {
+      uniqueConnRefs.add(r);
+    }
+  }
 
-### 2. Solution Metadata & Configuration
+  // Section 1: Overview
+  const overviewSection = `## Overview
 
-| Parameter | Value |
+Solution **${ast.solution.display_name}** – Solution Metadata & Specification
+
+| Property | Value |
 | :--- | :--- |
 | **Unique Name** | \`${ast.solution.unique_name}\` |
 | **Display Name** | ${ast.solution.display_name} |
 | **Version** | \`${ast.solution.version}\` |
-| **Package Type** | ${ast.solution.is_managed ? 'Managed Production Package' : 'Unmanaged Development Solution'} |
 | **Publisher** | ${ast.solution.publisher_name || 'Standard Publisher'} (\`${ast.solution.publisher_prefix || 'new'}\`) |
-| **Dataverse Tables** | ${ast.stats.entity_count} entities |
-| **Automations** | ${ast.stats.flow_count} Cloud Flows |
-| **Applications** | ${ast.stats.canvas_app_count} Canvas Apps |
-| **Configuration Variables** | ${ast.stats.env_var_count} Environment Variables |
+| **Managed / Unmanaged** | ${ast.solution.is_managed ? 'Managed' : 'Unmanaged'} |
+
+${ast.solution.description ? `> **Description**: ${ast.solution.description}\n` : '> *No description provided.*\n'}`;
+
+  // Section 2: Component inventory
+  const componentRows = [
+    { type: 'Dataverse Tables (Entities)', count: ast.entities.length },
+    { type: 'Table Columns (Attributes)', count: totalColumns },
+    { type: 'Entity Relationships', count: ast.stats.relationship_count },
+    { type: 'Business Rules', count: ast.business_rules?.length || 0 },
+    { type: 'Security Roles', count: ast.security_roles?.length || 0 },
+    { type: 'Cloud Flows (Power Automate)', count: ast.flows.length },
+    { type: 'Canvas Applications', count: ast.canvas_apps.length },
+    { type: 'Model-Driven Applications', count: modelDrivenApps.length },
+    { type: 'Global Choices (Option Sets)', count: ast.option_sets.length },
+    { type: 'Environment Variables', count: ast.environment_variables.length },
+    { type: 'Connection References', count: uniqueConnRefs.size },
+    { type: 'Web Resources (Scripts / Assets)', count: ast.web_resources?.length || 0 },
+    { type: 'Form Event Handlers', count: ast.form_event_handlers?.length || 0 },
+  ];
+
+  const inventorySection = `## Component inventory
+
+Solution **${ast.solution.display_name}** – Component Inventory Breakdown
+
+| Type | Count |
+| :--- | :--- |
+${componentRows.map((r) => `| ${r.type} | ${r.count} |`).join('\n')}`;
+
+  // Section 3: Apps
+  const canvasAppsList = ast.canvas_apps.map((app) => {
+    const slug = `app-${app.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    const screensList = app.screens.map((s) => s.name).slice(0, 4).join(', ');
+    const moreScreens = app.screens.length > 4 ? ` (+${app.screens.length - 4} more)` : '';
+    const dsList = app.data_sources.length > 0 ? app.data_sources.join(', ') : 'Dataverse';
+    return `- **[${app.display_name}](app-${slug})** (Canvas App) – \`${app.name}\`: ${app.screens.length} screens (${screensList}${moreScreens}). Data sources: ${dsList}`;
+  });
+
+  const modelAppsList = modelDrivenApps.map((ma) => {
+    return `- **[${ma.title}](#apps)** (Model-Driven App) – Navigation Sitemap containing ${ma.groupsCount} functional groups and ${ma.subAreasCount} sub-area links.`;
+  });
+
+  const allApps = [...canvasAppsList, ...modelAppsList];
+
+  const appsSection = `## Apps
+
+Solution **${ast.solution.display_name}** – Canvas and Model-Driven Applications
+
+${
+  allApps.length > 0
+    ? allApps.join('\n')
+    : '_No Canvas or Model-Driven Applications configured in this solution._'
+}`;
+
+  // Section 4: Automation
+  const flowRows = ast.flows.map((f) => {
+    const name = cleanFlowDisplayName(f.display_name || f.name);
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const triggerDesc = f.triggers.map((t) => t.name || t.type).join(', ') || 'Event / Manual';
+    return `| [${name}](flow-${slug}) | Cloud Flow | ${triggerDesc} | ${f.actions.length} action steps | ${f.status || 'Active'} |`;
+  });
+
+  const brRows = (ast.business_rules || []).map((br) => {
+    const slug = `${br.table}__${br.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    return `| [${br.name}](${slug}) | Business Rule | Table: \`${br.table}\` (${br.scope}) | ${br.actions.length} action(s), ${br.conditions.length} condition(s) | ${br.state} |`;
+  });
+
+  const allAutomationRows = [...flowRows, ...brRows];
+
+  const automationSection = `## Automation
+
+Solution **${ast.solution.display_name}** – Automated Workflows, Cloud Flows, and Logic
+
+| Name | Type | Trigger / Execution | Scope / Actions | Status |
+| :--- | :--- | :--- | :--- | :--- |
+${
+  allAutomationRows.length > 0
+    ? allAutomationRows.join('\n')
+    : '| - | - | - | - | - |\n*(No automated flows, workflows, BPFs, or plugins detected)*'
+}`;
+
+  // Section 5: Data model
+  const dataModelRows = ast.entities.map((e) => {
+    return `| **${e.display_name}** | \`${e.logical_name}\` | ${e.attributes.length} | ${e.forms_count ?? 0} | ${e.views_count ?? 0} |`;
+  });
+
+  const dataModelSection = `## Data model
+
+Solution **${ast.solution.display_name}** – Dataverse Tables & Schema Summary
+
+| Table | Logical Name | Columns | Forms | Views |
+| :--- | :--- | :--- | :--- | :--- |
+${
+  dataModelRows.length > 0
+    ? dataModelRows.join('\n')
+    : '| - | - | - | - | - |\n*(No Dataverse tables defined)*'
+}`;
+
+  // Section 6: Connectors used
+  const connectorRows = connectors.map((c) => {
+    const refsStr =
+      c.connectionReferences.length > 0
+        ? c.connectionReferences.map((r) => `\`${r}\``).join(', ')
+        : '*(none)*';
+    return `| **${c.connectorName}** | ${c.flowCount} | ${c.appCount} | ${refsStr} |`;
+  });
+
+  const connectorsSection = `## Connectors used
+
+Solution **${ast.solution.display_name}** – Connector Integrations & Connection References
+
+| Connector | # Flows | # Apps | Connection References |
+| :--- | :--- | :--- | :--- |
+${
+  connectorRows.length > 0
+    ? connectorRows.join('\n')
+    : '| - | - | - | - |\n*(No external connectors detected)*'
+}`;
+
+  // Section 7: Environment variables
+  const envVarRows = ast.environment_variables.map((v) => {
+    const defVal =
+      v.default_value !== undefined && v.default_value !== '' ? `\`${v.default_value}\`` : '*(none)*';
+    const curVal =
+      v.current_value !== undefined && v.current_value !== '' ? `\`${v.current_value}\`` : '*(not set)*';
+    return `| **${v.display_name}** (\`${v.schema_name}\`) | \`${v.type}\` | ${defVal} | ${curVal} |`;
+  });
+
+  const envVarSection = `## Environment variables
+
+Solution **${ast.solution.display_name}** – Environment Configuration Variables
+
+| Name | Type | Default | Current |
+| :--- | :--- | :--- | :--- |
+${
+  envVarRows.length > 0
+    ? envVarRows.join('\n')
+    : '| - | - | - | - |\n*(No environment variables configured)*'
+}`;
+
+  // Section 8: Dependency highlights
+  const depRows = (ast.dependencies || []).slice(0, 25).map((d) => {
+    const target = `\`${d.target_entity}\`${d.target_field ? ` . \`${d.target_field}\`` : ''}`;
+    const context = d.location_detail || d.context_snippet || '-';
+    return `| **${d.source_name}** | \`${d.source_type}\` | \`${d.operation_type}\` | ${target} | ${context} |`;
+  });
+
+  const depCountNotice =
+    (ast.dependencies?.length || 0) > 25
+      ? `\n\n*(Showing top 25 of ${ast.dependencies!.length} cross-component dependencies)*`
+      : '';
+
+  const dependencySection = `## Dependency highlights
+
+Solution **${ast.solution.display_name}** – Cross-Component Dependencies
+
+| Source Component | Type | Operation | Target Entity / Field | Context / Details |
+| :--- | :--- | :--- | :--- | :--- |
+${
+  depRows.length > 0
+    ? depRows.join('\n') + depCountNotice
+    : '| - | - | - | - | - |\n*(No cross-component dependencies detected)*'
+}`;
+
+  return `# ${ast.solution.display_name}
+
+${overviewSection}
 
 ---
 
-### 3. High-Level Solution Architecture
-
-\`\`\`mermaid
-flowchart TD
-    subgraph Users["User Layer"]
-        Agent["Support & Operations Users"]
-    end
-
-    subgraph Apps["Power Platform Client Layer"]
-        CanvasApp["Canvas App: ${ast.canvas_apps[0]?.display_name || 'Operational App'}"]
-        SiteMap["Model-Driven App / SiteMap"]
-    end
-
-    subgraph Data["Microsoft Dataverse"]
-        ${ast.entities.map((e, idx) => `E${idx}["${e.display_name} (${e.logical_name})"]`).join('\n        ')}
-    end
-
-    subgraph Automation["Automations & Services"]
-        ${ast.flows.map((f, idx) => `F${idx}["Flow: ${cleanFlowDisplayName(f.display_name || f.name)}"]`).join('\n        ')}
-    end
-
-    Agent --> CanvasApp
-    Agent --> SiteMap
-    CanvasApp --> Data
-    SiteMap --> Data
-    Data -.->|Triggers| Automation
-    Automation -.->|Updates & Queries| Data
-\`\`\`
+${inventorySection}
 
 ---
 
-### 4. Component Breakdown
-
-#### Dataverse Entities
-${eList || '_No custom entities in this solution._'}
-
-#### Power Automate Cloud Flows
-${fList || '_No Cloud Flows in this solution._'}
-
-#### Canvas Applications
-${aList || '_No Canvas Apps in this solution._'}
-
-#### Environment Variables & Deployment Parameters
-${vList || '_No environment variables configured._'}
+${appsSection}
 
 ---
 
-### 5. ALM & Deployment Guidelines
-1. **Source Control Integration**: Unpack this solution using PAC CLI (\`pac solution unpack\`) before committing to Git.
-2. **Environment Variable Binding**: Prior to production promotion, ensure current values are populated for target tenant connections.
-3. **Managed Solution Export**: Always export as Managed for Test, UAT, and Production deployments to prevent schema drift.
+${automationSection}
+
+---
+
+${dataModelSection}
+
+---
+
+${connectorsSection}
+
+---
+
+${envVarSection}
+
+---
+
+${dependencySection}
 `;
 }
 
@@ -311,6 +469,31 @@ ${entity.description ? `> ${entity.description}\n` : ''}
       doc += `| :--- | :--- | :--- | :--- | :--- |\n`;
       for (const rel of entity.relationships) {
         doc += `| \`${rel.schema_name}\` | **${rel.relationship_type}** | \`${rel.primary_entity}\` | \`${rel.referencing_attribute || '-'}\` | ${rel.cascade_delete || 'None'} |\n`;
+      }
+    }
+
+    const entityRules = (ast.business_rules || []).filter(
+      (r) => r.table.toLowerCase() === entity.logical_name.toLowerCase()
+    );
+    if (entityRules.length > 0) {
+      doc += `\n#### Business Rules\n\n`;
+      doc += `| Rule Name | Scope | State | Conditions Summary | Actions Summary |\n`;
+      doc += `| :--- | :--- | :--- | :--- | :--- |\n`;
+      for (const r of entityRules) {
+        const slug = `${r.table}__${r.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        const condSummary =
+          r.conditions.length > 0
+            ? r.conditions
+                .map((c) => `${c.field_display_name || c.field} ${c.operator} ${c.value || ''}`)
+                .join('; ')
+            : 'Always execute';
+        const actSummary =
+          r.actions.length > 0
+            ? r.actions
+                .map((a) => `${a.action_type}: ${a.target_field_display_name || a.target_field}`)
+                .join('; ')
+            : 'None';
+        doc += `| [${r.name}](${slug}) | ${r.scope} | ${r.state} | ${condSummary} | ${actSummary} |\n`;
       }
     }
 
@@ -892,6 +1075,226 @@ ${integrations.length > 0
 `;
 }
 
+export function generateDeterministicBusinessRule(rule: BusinessRule, ast: SolutionAST): string {
+  const tableDisplay = rule.table_display_name || rule.table;
+  const tablePart = rule.table_display_name
+    ? `${rule.table_display_name} (\`${rule.table}\`)`
+    : `\`${rule.table}\``;
+
+  const formatFieldTarget = (dispName?: string, logicalName?: string) => {
+    if (!logicalName) return '*(Not specified)*';
+    const rawDisp = dispName?.trim();
+    const sysLabel = COMMON_SYSTEM_FIELD_LABELS[logicalName.toLowerCase()];
+    const cleanDisp =
+      rawDisp && rawDisp.toLowerCase() !== logicalName.toLowerCase()
+        ? rawDisp
+        : sysLabel || '';
+    return cleanDisp ? `${cleanDisp} (\`${logicalName}\`)` : `\`${logicalName}\``;
+  };
+
+  const cleanActionValueDisplay = (val?: string, targetField?: string, actionType?: string) => {
+    let v = (val || '').trim();
+    if (!v) return '*(Not set)*';
+    if (/^\[?.*Step.*\]?$/i.test(v) || /^\[SetAttributeValueStep[^\]]*\]?$/i.test(v)) {
+      if (v.toLowerCase().includes('clear') || v.toLowerCase().includes('null')) {
+        return 'Clear Value';
+      }
+      if (targetField?.toLowerCase() === 'ownerid') {
+        return 'User / Team (Owner)';
+      }
+      return actionType === 'Set value' ? 'Set value' : '*(Not set)*';
+    }
+    return v;
+  };
+
+  // 1. Conditions in plain English with AND/OR grouping
+  let conditionsContent = '';
+  if (!rule.conditions || rule.conditions.length === 0) {
+    conditionsContent = '*Always execute (no condition evaluated).*';
+  } else if (rule.conditions.length === 1) {
+    const c = rule.conditions[0];
+    const fieldName = formatFieldTarget(c.field_display_name, c.field);
+    const val = c.value ? ` "${c.value}"` : '';
+    conditionsContent = `IF (${fieldName} ${c.operator}${val})`;
+  } else {
+    const condLines = rule.conditions.map((c, i) => {
+      const prefix = i === 0 ? '' : `${c.logical_join || 'AND'} `;
+      const fieldName = formatFieldTarget(c.field_display_name, c.field);
+      const val = c.value ? ` "${c.value}"` : '';
+      return `  ${prefix}${fieldName} ${c.operator}${val}`;
+    });
+    conditionsContent = `IF (\n${condLines.join('\n')}\n)`;
+  }
+
+  // 2. Actions table
+  let actionsContent = '';
+  if (!rule.actions || rule.actions.length === 0) {
+    actionsContent = '*No actions defined.*';
+  } else {
+    actionsContent = `| Action Type | Target Field | Value / Message |\n| :--- | :--- | :--- |\n`;
+    for (const a of rule.actions) {
+      const fieldName = formatFieldTarget(a.target_field_display_name, a.target_field);
+      const valDisplay = cleanActionValueDisplay(a.value_or_message, a.target_field, a.action_type);
+      actionsContent += `| ${a.action_type} | ${fieldName} | ${valDisplay} |\n`;
+    }
+  }
+
+  // 3. Else actions table
+  let elseActionsContent = '';
+  if (!rule.else_actions || rule.else_actions.length === 0) {
+    elseActionsContent = '*No else actions defined.*';
+  } else {
+    elseActionsContent = `| Action Type | Target Field | Value / Message |\n| :--- | :--- | :--- |\n`;
+    for (const a of rule.else_actions) {
+      const fieldName = formatFieldTarget(a.target_field_display_name, a.target_field);
+      const valDisplay = cleanActionValueDisplay(a.value_or_message, a.target_field, a.action_type);
+      elseActionsContent += `| ${a.action_type} | ${fieldName} | ${valDisplay} |\n`;
+    }
+  }
+
+  // 4. Fields involved: read | written
+  let fieldsContent = '';
+  const readList = rule.fields_read && rule.fields_read.length > 0 ? rule.fields_read : [];
+  const writtenList = rule.fields_written && rule.fields_written.length > 0 ? rule.fields_written : [];
+
+  if (readList.length === 0 && writtenList.length === 0) {
+    fieldsContent = '*No fields specified.*';
+  } else {
+    fieldsContent = `| Field | Logical Name | Access |\n| :--- | :--- | :--- |\n`;
+    const entity = ast.entities.find((e) => e.logical_name.toLowerCase() === rule.table.toLowerCase());
+    for (const f of readList) {
+      const attr = entity?.attributes.find((a) => a.logical_name.toLowerCase() === f.toLowerCase());
+      const disp = attr?.display_name || f;
+      fieldsContent += `| ${disp} | \`${f}\` | Read (Condition) |\n`;
+    }
+    for (const f of writtenList) {
+      const attr = entity?.attributes.find((a) => a.logical_name.toLowerCase() === f.toLowerCase());
+      const disp = attr?.display_name || f;
+      fieldsContent += `| ${disp} | \`${f}\` | Written (Action) |\n`;
+    }
+
+    fieldsContent += `\n- **Read**: ${readList.map((f) => `\`${f}\``).join(', ') || 'None'}\n`;
+    fieldsContent += `- **Written**: ${writtenList.map((f) => `\`${f}\``).join(', ') || 'None'}`;
+  }
+
+  // 5. Applies to forms
+  let formsContent = '';
+  if (!rule.applies_to_forms || rule.applies_to_forms.length === 0) {
+    formsContent = '- All Forms';
+  } else {
+    formsContent = rule.applies_to_forms.map((form) => `- ${form}`).join('\n');
+  }
+
+  const slug = `${rule.table}__${rule.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+  return `---
+doc_id: br_${slug}
+doc_type: business_rule
+name: ${rule.name}
+logical_name: ${rule.logical_name || rule.id}
+solution: ${ast.solution.unique_name}
+solution_version: ${ast.solution.version}
+publisher_prefix: ${ast.solution.publisher_prefix || ''}
+primary_table: ${rule.table}
+tags: [business-rule, dataverse, ${rule.table}, ${rule.state.toLowerCase()}]
+---
+
+# Business Rule: ${rule.name}
+
+${rule.description ? `> ${rule.description}\n\n` : ''}Business validation and behavior automation rule defined on the **${tableDisplay}** table in **${ast.solution.display_name}**.
+
+---
+
+## Overview
+- **Name**: ${rule.name}
+- **Table**: ${tablePart}
+- **Scope**: ${rule.scope}
+- **State**: ${rule.state}
+- **Description**: ${rule.description || '*(No description provided)*'}
+
+## Conditions
+${conditionsContent}
+
+## Actions
+${actionsContent}
+
+## Else actions
+${elseActionsContent}
+
+## Fields involved
+${fieldsContent}
+
+## Applies to forms
+${formsContent}
+`;
+}
+
+export function generateDeterministicSecurityRole(role: SecurityRole, ast: SolutionAST): string {
+  const slug = role.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+  // 1. Table privileges table
+  let tablePrivilegesContent = '';
+  if (!role.table_privileges || role.table_privileges.length === 0) {
+    tablePrivilegesContent = '_No table privileges configured for this role._';
+  } else {
+    tablePrivilegesContent = `| Table | Create | Read | Write | Delete | Append | AppendTo | Assign | Share |\n| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+    for (const p of role.table_privileges) {
+      const tablePart =
+        p.table_display_name && p.table_display_name.toLowerCase() !== p.table.toLowerCase()
+          ? `${p.table_display_name} (\`${p.table}\`)`
+          : `\`${p.table}\``;
+      tablePrivilegesContent += `| ${tablePart} | ${p.create} | ${p.read} | ${p.write} | ${p.delete} | ${p.append} | ${p.append_to} | ${p.assign} | ${p.share} |\n`;
+    }
+  }
+
+  // 2. Misc privileges list
+  let miscPrivilegesContent = '';
+  if (!role.misc_privileges || role.misc_privileges.length === 0) {
+    miscPrivilegesContent = '_No miscellaneous privileges configured for this role._';
+  } else {
+    miscPrivilegesContent = role.misc_privileges.map((m) => `- \`${m}\``).join('\n');
+  }
+
+  // 3. Assigned to apps list
+  let assignedAppsContent = '';
+  if (!role.assigned_apps || role.assigned_apps.length === 0) {
+    assignedAppsContent = '_No applications currently assigned to this security role._';
+  } else {
+    assignedAppsContent = role.assigned_apps.map((a) => `- ${a}`).join('\n');
+  }
+
+  return `---
+doc_id: role_${slug}
+doc_type: security_role
+name: ${role.name}
+solution: ${ast.solution.unique_name}
+solution_version: ${ast.solution.version}
+publisher_prefix: ${ast.solution.publisher_prefix || ''}
+tags: [security-role, security, ${slug}]
+---
+
+# Security role: ${role.name}
+
+${role.description ? `> ${role.description}\n\n` : ''}Security role definition and privilege matrix defined in **${ast.solution.display_name}**.
+
+---
+
+## Overview
+- **Name**: ${role.name}
+- **Business unit scope**: ${role.business_unit || 'Organization / Root'}
+- **Description**: ${role.description || '*(No description provided)*'}
+
+## Table privileges
+${tablePrivilegesContent}
+
+## Misc privileges
+${miscPrivilegesContent}
+
+## Assigned to apps
+${assignedAppsContent}
+`;
+}
+
 export interface DocGeneratorOptions {
   concurrency?: number;
 }
@@ -1117,6 +1520,48 @@ export async function generateDocumentationSuite(
         };
       },
     });
+  }
+
+  // Step 7: Business Rules (Each business rule as a separate markdown file)
+  if (ast.business_rules && ast.business_rules.length > 0) {
+    for (const rule of ast.business_rules) {
+      const ruleSlug = `${rule.table}__${rule.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+      tasks.push({
+        label: `Documenting Business Rule: ${rule.name}...`,
+        fn: async (): Promise<DocumentRecord> => {
+          const brContent = generateDeterministicBusinessRule(rule, ast);
+          return {
+            id: `${projectId}_br_${rule.id}`,
+            project_id: projectId,
+            doc_type: 'business_rule',
+            title: `Business Rule: ${rule.name}`,
+            slug: ruleSlug,
+            content_markdown: brContent,
+          };
+        },
+      });
+    }
+  }
+
+  // Step 8: Security Roles (Each security role as a separate markdown file)
+  if (ast.security_roles && ast.security_roles.length > 0) {
+    for (const role of ast.security_roles) {
+      const roleSlug = role.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      tasks.push({
+        label: `Documenting Security Role: ${role.name}...`,
+        fn: async (): Promise<DocumentRecord> => {
+          const roleContent = generateDeterministicSecurityRole(role, ast);
+          return {
+            id: `${projectId}_role_${role.id.replace(/[{}]/g, '')}`,
+            project_id: projectId,
+            doc_type: 'security_role',
+            title: `Security Role: ${role.name}`,
+            slug: roleSlug,
+            content_markdown: roleContent,
+          };
+        },
+      });
+    }
   }
 
   if (tasks.length === 0) {

@@ -3,7 +3,8 @@
  * and connection references.
  */
 
-import { ConnectionReference } from '../../types/solution';
+import { ConnectionReference, SolutionAST } from '../../types/solution';
+import { cleanFlowDisplayName } from '../parser/solutionParser';
 
 // Known Power Platform connector families and canonical brandings
 const KNOWN_CONNECTOR_BRANDS: Record<string, string> = {
@@ -90,3 +91,100 @@ export function formatConnectionReference(ref: ConnectionReference): string {
 
   return `- **${friendlyName}** (\`${logical}\`): Connector ID \`${technicalId}\``;
 }
+
+export interface ConnectorSummaryItem {
+  connectorName: string;
+  flowCount: number;
+  appCount: number;
+  connectionReferences: string[];
+}
+
+/**
+ * Aggregates connector usage across all Cloud Flows and Canvas Apps in the solution AST,
+ * identifying flow counts, app counts, and associated connection references.
+ */
+export function extractConnectorsSummary(ast: SolutionAST): ConnectorSummaryItem[] {
+  const map = new Map<
+    string,
+    {
+      flows: Set<string>;
+      apps: Set<string>;
+      refs: Set<string>;
+    }
+  >();
+
+  const getOrCreate = (name: string) => {
+    let entry = map.get(name);
+    if (!entry) {
+      entry = {
+        flows: new Set<string>(),
+        apps: new Set<string>(),
+        refs: new Set<string>(),
+      };
+      map.set(name, entry);
+    }
+    return entry;
+  };
+
+  // 1. From flows and their connection references
+  for (const flow of ast.flows) {
+    const flowIdentifier = cleanFlowDisplayName(flow.display_name || flow.name);
+
+    if (flow.connection_references && flow.connection_references.length > 0) {
+      for (const ref of flow.connection_references) {
+        const connName = humanizeConnectorName(ref.connector_id || ref.connection_type || ref.logical_name);
+        const entry = getOrCreate(connName);
+        entry.flows.add(flowIdentifier);
+        if (ref.logical_name) {
+          entry.refs.add(ref.logical_name);
+        }
+      }
+    }
+  }
+
+  // 2. From flow integrations (detected action API connections)
+  if (ast.flow_integrations) {
+    for (const int of ast.flow_integrations) {
+      const connName = humanizeConnectorName(int.connector_id || int.connector_name);
+      const entry = getOrCreate(connName);
+      entry.flows.add(int.flow_name);
+    }
+  }
+
+  // 3. From canvas apps data sources
+  const entityNames = new Set(ast.entities.map((e) => e.logical_name.toLowerCase()));
+  for (const app of ast.canvas_apps) {
+    const appIdentifier = app.display_name || app.name;
+    for (const ds of app.data_sources) {
+      const dsLower = ds.toLowerCase();
+      if (
+        dsLower === 'common data service' ||
+        dsLower === 'commondataservice' ||
+        dsLower === 'dataverse' ||
+        entityNames.has(dsLower)
+      ) {
+        const entry = getOrCreate('Microsoft Dataverse');
+        entry.apps.add(appIdentifier);
+      } else {
+        const connName = humanizeConnectorName(ds);
+        const entry = getOrCreate(connName);
+        entry.apps.add(appIdentifier);
+      }
+    }
+  }
+
+  const results: ConnectorSummaryItem[] = [];
+  for (const [name, data] of map.entries()) {
+    results.push({
+      connectorName: name,
+      flowCount: data.flows.size,
+      appCount: data.apps.size,
+      connectionReferences: Array.from(data.refs).sort(),
+    });
+  }
+
+  // Sort by flow count + app count descending
+  results.sort((a, b) => b.flowCount + b.appCount - (a.flowCount + a.appCount));
+  return results;
+}
+

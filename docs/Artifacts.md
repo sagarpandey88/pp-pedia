@@ -90,7 +90,7 @@ generated_on: 2026-09-25
 ## Overview          – unique name, display name, version, publisher, managed/unmanaged, description
 ## Component inventory – table: type | count
 ## Apps              – list of canvas + model-driven apps with links
-## Automation        – flows / workflows / BPFs / plugins summary
+## Automation        – table of flows / workflows / BPFs / plugins summary
 ## Data model        – tables list with record counts of columns/forms/views
 ## Connectors used   – connector | # flows | # apps | connection references
 ## Environment variables – name | type | default | current
