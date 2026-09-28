@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkFrontmatter from 'remark-frontmatter';
 import {
   FileText,
   Database,
@@ -19,6 +20,7 @@ import {
   MessageSquare,
   Scale,
   Shield,
+  Bot,
 } from 'lucide-react';
 import { ProjectRecord, DocumentRecord, DocumentType } from '../../types/db';
 import { MermaidDiagram } from './MermaidDiagram';
@@ -135,6 +137,18 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
 
   const activeDoc =
     documents.find((d) => d.id === activeDocId) || documents[0];
+
+  const [showAgentMetadata, setShowAgentMetadata] = useState(false);
+
+  useEffect(() => {
+    setShowAgentMetadata(false);
+  }, [activeDoc?.id]);
+
+  const rawFrontmatter = useMemo(() => {
+    if (!activeDoc?.content_markdown) return null;
+    const match = activeDoc.content_markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    return match ? match[1].trim() : null;
+  }, [activeDoc?.content_markdown]);
 
   const isSearching = searchQuery.trim().length > 0;
 
@@ -552,6 +566,23 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* View Agent Metadata Toggle Button */}
+            {rawFrontmatter && (
+              <button
+                type="button"
+                onClick={() => setShowAgentMetadata((prev) => !prev)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition border ${
+                  showAgentMetadata
+                    ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/50'
+                    : 'text-slate-400 hover:text-slate-200 border-slate-700/60 hover:bg-slate-800/60'
+                }`}
+                title={showAgentMetadata ? 'Hide Agent Metadata' : 'View Hidden Agent Metadata'}
+              >
+                <Bot className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="hidden sm:inline">Agent Meta</span>
+              </button>
+            )}
+
             {/* AI Chat Assistant Toggle Button */}
             <button
               type="button"
@@ -583,8 +614,39 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
           <div className="max-w-4xl mx-auto">
             {activeDoc ? (
               <article className="prose prose-invert prose-slate max-w-none">
+                {rawFrontmatter && (
+                  <div
+                    className="sr-only"
+                    aria-hidden="true"
+                    data-testid="doc-agent-metadata"
+                  >
+                    {rawFrontmatter}
+                  </div>
+                )}
+
+                {showAgentMetadata && rawFrontmatter && (
+                  <div className="not-prose mb-6 rounded-xl border border-indigo-500/30 bg-slate-900/90 p-4 shadow-lg backdrop-blur-sm">
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-xs font-semibold text-indigo-300">
+                      <div className="flex items-center gap-2">
+                        <Bot className="w-4 h-4 text-indigo-400" />
+                        <span>Background Agent Metadata (Hidden from Document)</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAgentMetadata(false)}
+                        className="text-slate-400 hover:text-slate-200 text-xs px-2 py-0.5 rounded hover:bg-slate-800 transition"
+                      >
+                        Hide
+                      </button>
+                    </div>
+                    <pre className="text-xs font-mono text-slate-300 bg-slate-950/60 p-3 rounded-lg border border-slate-800/60 overflow-x-auto whitespace-pre-wrap">
+                      {rawFrontmatter}
+                    </pre>
+                  </div>
+                )}
+
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                  remarkPlugins={[remarkGfm, remarkFrontmatter]}
                   components={{
                     pre({ children }: any) {
                       return <>{children}</>;

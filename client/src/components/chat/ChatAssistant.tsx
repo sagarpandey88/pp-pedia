@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkFrontmatter from 'remark-frontmatter';
 import {
   Send,
   Bot,
@@ -88,7 +89,7 @@ const ChatMessageContent: React.FC<{
   return (
     <div className="text-sm leading-relaxed text-slate-200 break-words">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkFrontmatter]}
         components={{
           pre({ children }: any) {
             return <>{children}</>;
