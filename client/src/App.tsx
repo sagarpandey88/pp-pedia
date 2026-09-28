@@ -54,17 +54,22 @@ export function App() {
     setHasApiKey(Boolean(s.apiKey && s.apiKey.length > 5));
   }, []);
 
-  const refreshProjects = useCallback(async () => {
+  const refreshProjects = useCallback(async (preferredActiveId?: string) => {
     try {
       const projs = await getProjects();
       setProjects(projs);
-      if (projs.length > 0 && !activeProjectId) {
-        setActiveProjectId(projs[0].id);
-      }
+      setActiveProjectId((prevActiveId) => {
+        const targetId = preferredActiveId ?? prevActiveId;
+        if (projs.length === 0) return undefined;
+        if (targetId && projs.some((p) => p.id === targetId)) {
+          return targetId;
+        }
+        return projs[0].id;
+      });
     } catch (err) {
       console.error('Error fetching projects from PGlite:', err);
     }
-  }, [activeProjectId]);
+  }, []);
 
   const loadProjectDocs = useCallback(async (projId: string) => {
     try {
@@ -239,8 +244,7 @@ export function App() {
       setIngestionProgress(100);
       setIngestionStatusText('Ingestion complete!');
 
-      await refreshProjects();
-      setActiveProjectId(projectId);
+      await refreshProjects(projectId);
       await loadProjectDocs(projectId);
     } catch (err: any) {
       console.error('Ingestion failed:', err);
@@ -255,9 +259,6 @@ export function App() {
   const handleDeleteProject = async (id: string) => {
     try {
       await deleteProject(id);
-      if (activeProjectId === id) {
-        setActiveProjectId(undefined);
-      }
       await refreshProjects();
     } catch (err) {
       console.error('Error deleting project:', err);

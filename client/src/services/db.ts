@@ -23,6 +23,7 @@ import {
   DataverseEntity,
   BusinessRule,
   SecurityRole,
+  SolutionStats,
 } from '../types/solution';
 
 const SCHEMA_EXTENSIONS_DDL = `
@@ -886,12 +887,54 @@ async function saveProjectTx(tx: Transaction, project: ProjectRecord): Promise<v
   }
 }
 
+async function flushDatabase(db: PGlite): Promise<void> {
+  try {
+    await db.exec('CHECKPOINT;');
+  } catch (err) {
+    console.warn('Post-transaction CHECKPOINT failed:', err);
+  }
+  try {
+    if (typeof (db as any).syncToFs === 'function') {
+      await (db as any).syncToFs();
+    }
+  } catch (err) {
+    console.warn('Post-transaction syncToFs failed:', err);
+  }
+}
+
+function parseJsonSafe<T>(val: unknown, fallback: T): T {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'object') return val as T;
+  if (typeof val === 'string') {
+    try {
+      return JSON.parse(val) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
+const DEFAULT_STATS: SolutionStats = {
+  entity_count: 0,
+  flow_count: 0,
+  canvas_app_count: 0,
+  env_var_count: 0,
+  relationship_count: 0,
+  option_set_count: 0,
+  business_rule_count: 0,
+  security_role_count: 0,
+  web_resource_count: 0,
+  script_count: 0,
+  dependency_count: 0,
+};
+
 export async function saveProject(project: ProjectRecord): Promise<void> {
   const db = await getDb();
   await db.transaction(async (tx) => {
-    await tx.exec('SET LOCAL synchronous_commit = off;');
     await saveProjectTx(tx, project);
   });
+  await flushDatabase(db);
 }
 
 export async function getProjects(): Promise<ProjectRecord[]> {
@@ -905,12 +948,8 @@ export async function getProjects(): Promise<ProjectRecord[]> {
 
   return res.rows.map((row) => ({
     ...row,
-    ast_json:
-      typeof row.ast_json === 'string'
-        ? JSON.parse(row.ast_json)
-        : row.ast_json,
-    stats:
-      typeof row.stats === 'string' ? JSON.parse(row.stats) : row.stats,
+    ast_json: parseJsonSafe(row.ast_json, null as any),
+    stats: parseJsonSafe(row.stats, DEFAULT_STATS),
   }));
 }
 
@@ -924,21 +963,17 @@ export async function getProject(id: string): Promise<ProjectRecord | null> {
   const row = res.rows[0];
   return {
     ...row,
-    ast_json:
-      typeof row.ast_json === 'string'
-        ? JSON.parse(row.ast_json)
-        : row.ast_json,
-    stats:
-      typeof row.stats === 'string' ? JSON.parse(row.stats) : row.stats,
+    ast_json: parseJsonSafe(row.ast_json, null as any),
+    stats: parseJsonSafe(row.stats, DEFAULT_STATS),
   };
 }
 
 export async function deleteProject(id: string): Promise<void> {
   const db = await getDb();
   await db.transaction(async (tx) => {
-    await tx.exec('SET LOCAL synchronous_commit = off;');
     await tx.query('DELETE FROM projects WHERE id = $1;', [id]);
   });
+  await flushDatabase(db);
 }
 
 async function insertDocumentsTx(
@@ -987,9 +1022,9 @@ export async function saveDocuments(docs: DocumentRecord[]): Promise<void> {
   if (docs.length === 0) return;
   const db = await getDb();
   await db.transaction(async (tx) => {
-    await tx.exec('SET LOCAL synchronous_commit = off;');
     await insertDocumentsTx(tx, docs);
   });
+  await flushDatabase(db);
 }
 
 export async function getDocuments(projectId: string): Promise<DocumentRecord[]> {
@@ -1107,15 +1142,15 @@ export async function saveChunks(chunks: ChunkRecord[]): Promise<void> {
   if (chunks.length === 0) return;
   const db = await getDb();
   await db.transaction(async (tx) => {
-    await tx.exec('SET LOCAL synchronous_commit = off;');
     await insertChunksTx(tx, chunks);
   });
+  await flushDatabase(db);
 }
 
 /**
  * Persists an entire ingested project (metadata, documents, and chunks)
- * inside a single atomic transaction with multi-row batching and relaxed synchronous commit.
- * This guarantees consistency and reduces IndexedDB/VFS flush operations from hundreds to one.
+ * inside a single atomic transaction with multi-row batching and synchronous commit.
+ * Flushes WAL and checkpoints to IndexedDB so changes survive page reloads.
  */
 export async function saveFullProjectIngestion(
   project: ProjectRecord,
@@ -1124,7 +1159,6 @@ export async function saveFullProjectIngestion(
 ): Promise<void> {
   const db = await getDb();
   await db.transaction(async (tx) => {
-    await tx.exec('SET LOCAL synchronous_commit = off;');
     await saveProjectTx(tx, project);
     if (docs.length > 0) {
       await insertDocumentsTx(tx, docs);
@@ -1133,6 +1167,7 @@ export async function saveFullProjectIngestion(
       await insertChunksTx(tx, chunks);
     }
   });
+  await flushDatabase(db);
 }
 
 /**
