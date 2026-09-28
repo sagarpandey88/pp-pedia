@@ -291,6 +291,66 @@ export async function createSampleSolutionZip(): Promise<Blob> {
       </Area>
     </SiteMap>
   </AppModuleSiteMap>
+  <Workflows>
+    <Workflow WorkflowId="{d3a2c5e1-7489-4e09-9f7b-99f123456789}" Name="Require Issue Details for Critical Tickets">
+      <LocalizedNames>
+        <LocalizedName description="Require Issue Details for Critical Tickets" languagecode="1033" />
+      </LocalizedNames>
+      <Descriptions>
+        <Description description="Enforces issue details requirement and validates reproduction steps when ticket priority is set to Critical (P1)." languagecode="1033" />
+      </Descriptions>
+      <Category>2</Category>
+      <PrimaryEntity>contoso_ticket</PrimaryEntity>
+      <Scope>4</Scope>
+      <StateCode>1</StateCode>
+      <StatusCode>2</StatusCode>
+      <ClientData><![CDATA[{"rules":[{"conditions":[{"field":"contoso_prioritycode","operator":"equals","value":"4"}],"actions":[{"actionType":"Set required","targetField":"contoso_description","valueOrMessage":"Business Required"},{"actionType":"Show error","targetField":"contoso_description","valueOrMessage":"Critical tickets must have detailed reproduction steps in Issue Details."}],"elseActions":[{"actionType":"Set required","targetField":"contoso_description","valueOrMessage":"Optional / Not Required"}]}]}]]></ClientData>
+    </Workflow>
+  </Workflows>
+  <Roles>
+    <Role id="{f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c}" name="Customer Support Representative" description="Provides read and write access to customer tickets, accounts, and contacts within the business unit.">
+      <BusinessUnitId>{bu-guid-001}</BusinessUnitId>
+      <RolePrivileges>
+        <RolePrivilege name="prvCreatecontoso_ticket" level="Local" />
+        <RolePrivilege name="prvReadcontoso_ticket" level="Deep" />
+        <RolePrivilege name="prvWritecontoso_ticket" level="Local" />
+        <RolePrivilege name="prvDeletecontoso_ticket" level="Basic" />
+        <RolePrivilege name="prvAppendcontoso_ticket" level="Local" />
+        <RolePrivilege name="prvAppendTocontoso_ticket" level="Local" />
+        <RolePrivilege name="prvAssigncontoso_ticket" level="Basic" />
+        <RolePrivilege name="prvSharecontoso_ticket" level="Basic" />
+        <RolePrivilege name="prvReadaccount" level="Local" />
+        <RolePrivilege name="prvReadcontact" level="Local" />
+        <RolePrivilege name="prvExportToExcel" level="Global" />
+      </RolePrivileges>
+    </Role>
+    <Role id="{a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d}" name="Support Administrator" description="Full organization-level administrative privileges over ticketing operations.">
+      <RolePrivileges>
+        <RolePrivilege name="prvCreatecontoso_ticket" level="Global" />
+        <RolePrivilege name="prvReadcontoso_ticket" level="Global" />
+        <RolePrivilege name="prvWritecontoso_ticket" level="Global" />
+        <RolePrivilege name="prvDeletecontoso_ticket" level="Global" />
+        <RolePrivilege name="prvAppendcontoso_ticket" level="Global" />
+        <RolePrivilege name="prvAppendTocontoso_ticket" level="Global" />
+        <RolePrivilege name="prvAssigncontoso_ticket" level="Global" />
+        <RolePrivilege name="prvSharecontoso_ticket" level="Global" />
+        <RolePrivilege name="prvExportToExcel" level="Global" />
+        <RolePrivilege name="prvBulkDelete" level="Global" />
+      </RolePrivileges>
+    </Role>
+  </Roles>
+  <AppModules>
+    <AppModule>
+      <UniqueName>contoso_support_hub</UniqueName>
+      <LocalizedNames>
+        <LocalizedName description="Customer Care Hub" languagecode="1033" />
+      </LocalizedNames>
+      <AppModuleRoles>
+        <AppModuleRole roleid="{f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c}" />
+        <AppModuleRole roleid="{a2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d}" />
+      </AppModuleRoles>
+    </AppModule>
+  </AppModules>
 </ImportExportXml>`;
   zip.file('customizations.xml', customizationsXml);
 

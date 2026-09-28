@@ -1,5 +1,5 @@
-import { SolutionAST, DataverseEntity, CloudFlow, CanvasApp, FlowAction, FlowTrigger, TokenUsage } from '../../types/solution';
-import { cleanFlowDisplayName } from '../parser/solutionParser';
+import { SolutionAST, DataverseEntity, CloudFlow, CanvasApp, FlowAction, FlowTrigger, TokenUsage, BusinessRule, SecurityRole } from '../../types/solution';
+import { cleanFlowDisplayName, COMMON_SYSTEM_FIELD_LABELS } from '../parser/solutionParser';
 import { DocumentRecord } from '../../types/db';
 import { formatConnectionReference, extractConnectorsSummary } from './connectorUtils';
 import {
@@ -165,6 +165,8 @@ ${ast.solution.description ? `> **Description**: ${ast.solution.description}\n` 
     { type: 'Dataverse Tables (Entities)', count: ast.entities.length },
     { type: 'Table Columns (Attributes)', count: totalColumns },
     { type: 'Entity Relationships', count: ast.stats.relationship_count },
+    { type: 'Business Rules', count: ast.business_rules?.length || 0 },
+    { type: 'Security Roles', count: ast.security_roles?.length || 0 },
     { type: 'Cloud Flows (Power Automate)', count: ast.flows.length },
     { type: 'Canvas Applications', count: ast.canvas_apps.length },
     { type: 'Model-Driven Applications', count: modelDrivenApps.length },
@@ -216,6 +218,13 @@ ${
     return `| [${name}](flow-${slug}) | Cloud Flow | ${triggerDesc} | ${f.actions.length} action steps | ${f.status || 'Active'} |`;
   });
 
+  const brRows = (ast.business_rules || []).map((br) => {
+    const slug = `${br.table}__${br.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    return `| [${br.name}](${slug}) | Business Rule | Table: \`${br.table}\` (${br.scope}) | ${br.actions.length} action(s), ${br.conditions.length} condition(s) | ${br.state} |`;
+  });
+
+  const allAutomationRows = [...flowRows, ...brRows];
+
   const automationSection = `## Automation
 
 Solution **${ast.solution.display_name}** – Automated Workflows, Cloud Flows, and Logic
@@ -223,8 +232,8 @@ Solution **${ast.solution.display_name}** – Automated Workflows, Cloud Flows, 
 | Name | Type | Trigger / Execution | Scope / Actions | Status |
 | :--- | :--- | :--- | :--- | :--- |
 ${
-  flowRows.length > 0
-    ? flowRows.join('\n')
+  allAutomationRows.length > 0
+    ? allAutomationRows.join('\n')
     : '| - | - | - | - | - |\n*(No automated flows, workflows, BPFs, or plugins detected)*'
 }`;
 
@@ -460,6 +469,31 @@ ${entity.description ? `> ${entity.description}\n` : ''}
       doc += `| :--- | :--- | :--- | :--- | :--- |\n`;
       for (const rel of entity.relationships) {
         doc += `| \`${rel.schema_name}\` | **${rel.relationship_type}** | \`${rel.primary_entity}\` | \`${rel.referencing_attribute || '-'}\` | ${rel.cascade_delete || 'None'} |\n`;
+      }
+    }
+
+    const entityRules = (ast.business_rules || []).filter(
+      (r) => r.table.toLowerCase() === entity.logical_name.toLowerCase()
+    );
+    if (entityRules.length > 0) {
+      doc += `\n#### Business Rules\n\n`;
+      doc += `| Rule Name | Scope | State | Conditions Summary | Actions Summary |\n`;
+      doc += `| :--- | :--- | :--- | :--- | :--- |\n`;
+      for (const r of entityRules) {
+        const slug = `${r.table}__${r.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+        const condSummary =
+          r.conditions.length > 0
+            ? r.conditions
+                .map((c) => `${c.field_display_name || c.field} ${c.operator} ${c.value || ''}`)
+                .join('; ')
+            : 'Always execute';
+        const actSummary =
+          r.actions.length > 0
+            ? r.actions
+                .map((a) => `${a.action_type}: ${a.target_field_display_name || a.target_field}`)
+                .join('; ')
+            : 'None';
+        doc += `| [${r.name}](${slug}) | ${r.scope} | ${r.state} | ${condSummary} | ${actSummary} |\n`;
       }
     }
 
@@ -1041,6 +1075,226 @@ ${integrations.length > 0
 `;
 }
 
+export function generateDeterministicBusinessRule(rule: BusinessRule, ast: SolutionAST): string {
+  const tableDisplay = rule.table_display_name || rule.table;
+  const tablePart = rule.table_display_name
+    ? `${rule.table_display_name} (\`${rule.table}\`)`
+    : `\`${rule.table}\``;
+
+  const formatFieldTarget = (dispName?: string, logicalName?: string) => {
+    if (!logicalName) return '*(Not specified)*';
+    const rawDisp = dispName?.trim();
+    const sysLabel = COMMON_SYSTEM_FIELD_LABELS[logicalName.toLowerCase()];
+    const cleanDisp =
+      rawDisp && rawDisp.toLowerCase() !== logicalName.toLowerCase()
+        ? rawDisp
+        : sysLabel || '';
+    return cleanDisp ? `${cleanDisp} (\`${logicalName}\`)` : `\`${logicalName}\``;
+  };
+
+  const cleanActionValueDisplay = (val?: string, targetField?: string, actionType?: string) => {
+    let v = (val || '').trim();
+    if (!v) return '*(Not set)*';
+    if (/^\[?.*Step.*\]?$/i.test(v) || /^\[SetAttributeValueStep[^\]]*\]?$/i.test(v)) {
+      if (v.toLowerCase().includes('clear') || v.toLowerCase().includes('null')) {
+        return 'Clear Value';
+      }
+      if (targetField?.toLowerCase() === 'ownerid') {
+        return 'User / Team (Owner)';
+      }
+      return actionType === 'Set value' ? 'Set value' : '*(Not set)*';
+    }
+    return v;
+  };
+
+  // 1. Conditions in plain English with AND/OR grouping
+  let conditionsContent = '';
+  if (!rule.conditions || rule.conditions.length === 0) {
+    conditionsContent = '*Always execute (no condition evaluated).*';
+  } else if (rule.conditions.length === 1) {
+    const c = rule.conditions[0];
+    const fieldName = formatFieldTarget(c.field_display_name, c.field);
+    const val = c.value ? ` "${c.value}"` : '';
+    conditionsContent = `IF (${fieldName} ${c.operator}${val})`;
+  } else {
+    const condLines = rule.conditions.map((c, i) => {
+      const prefix = i === 0 ? '' : `${c.logical_join || 'AND'} `;
+      const fieldName = formatFieldTarget(c.field_display_name, c.field);
+      const val = c.value ? ` "${c.value}"` : '';
+      return `  ${prefix}${fieldName} ${c.operator}${val}`;
+    });
+    conditionsContent = `IF (\n${condLines.join('\n')}\n)`;
+  }
+
+  // 2. Actions table
+  let actionsContent = '';
+  if (!rule.actions || rule.actions.length === 0) {
+    actionsContent = '*No actions defined.*';
+  } else {
+    actionsContent = `| Action Type | Target Field | Value / Message |\n| :--- | :--- | :--- |\n`;
+    for (const a of rule.actions) {
+      const fieldName = formatFieldTarget(a.target_field_display_name, a.target_field);
+      const valDisplay = cleanActionValueDisplay(a.value_or_message, a.target_field, a.action_type);
+      actionsContent += `| ${a.action_type} | ${fieldName} | ${valDisplay} |\n`;
+    }
+  }
+
+  // 3. Else actions table
+  let elseActionsContent = '';
+  if (!rule.else_actions || rule.else_actions.length === 0) {
+    elseActionsContent = '*No else actions defined.*';
+  } else {
+    elseActionsContent = `| Action Type | Target Field | Value / Message |\n| :--- | :--- | :--- |\n`;
+    for (const a of rule.else_actions) {
+      const fieldName = formatFieldTarget(a.target_field_display_name, a.target_field);
+      const valDisplay = cleanActionValueDisplay(a.value_or_message, a.target_field, a.action_type);
+      elseActionsContent += `| ${a.action_type} | ${fieldName} | ${valDisplay} |\n`;
+    }
+  }
+
+  // 4. Fields involved: read | written
+  let fieldsContent = '';
+  const readList = rule.fields_read && rule.fields_read.length > 0 ? rule.fields_read : [];
+  const writtenList = rule.fields_written && rule.fields_written.length > 0 ? rule.fields_written : [];
+
+  if (readList.length === 0 && writtenList.length === 0) {
+    fieldsContent = '*No fields specified.*';
+  } else {
+    fieldsContent = `| Field | Logical Name | Access |\n| :--- | :--- | :--- |\n`;
+    const entity = ast.entities.find((e) => e.logical_name.toLowerCase() === rule.table.toLowerCase());
+    for (const f of readList) {
+      const attr = entity?.attributes.find((a) => a.logical_name.toLowerCase() === f.toLowerCase());
+      const disp = attr?.display_name || f;
+      fieldsContent += `| ${disp} | \`${f}\` | Read (Condition) |\n`;
+    }
+    for (const f of writtenList) {
+      const attr = entity?.attributes.find((a) => a.logical_name.toLowerCase() === f.toLowerCase());
+      const disp = attr?.display_name || f;
+      fieldsContent += `| ${disp} | \`${f}\` | Written (Action) |\n`;
+    }
+
+    fieldsContent += `\n- **Read**: ${readList.map((f) => `\`${f}\``).join(', ') || 'None'}\n`;
+    fieldsContent += `- **Written**: ${writtenList.map((f) => `\`${f}\``).join(', ') || 'None'}`;
+  }
+
+  // 5. Applies to forms
+  let formsContent = '';
+  if (!rule.applies_to_forms || rule.applies_to_forms.length === 0) {
+    formsContent = '- All Forms';
+  } else {
+    formsContent = rule.applies_to_forms.map((form) => `- ${form}`).join('\n');
+  }
+
+  const slug = `${rule.table}__${rule.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+  return `---
+doc_id: br_${slug}
+doc_type: business_rule
+name: ${rule.name}
+logical_name: ${rule.logical_name || rule.id}
+solution: ${ast.solution.unique_name}
+solution_version: ${ast.solution.version}
+publisher_prefix: ${ast.solution.publisher_prefix || ''}
+primary_table: ${rule.table}
+tags: [business-rule, dataverse, ${rule.table}, ${rule.state.toLowerCase()}]
+---
+
+# Business Rule: ${rule.name}
+
+${rule.description ? `> ${rule.description}\n\n` : ''}Business validation and behavior automation rule defined on the **${tableDisplay}** table in **${ast.solution.display_name}**.
+
+---
+
+## Overview
+- **Name**: ${rule.name}
+- **Table**: ${tablePart}
+- **Scope**: ${rule.scope}
+- **State**: ${rule.state}
+- **Description**: ${rule.description || '*(No description provided)*'}
+
+## Conditions
+${conditionsContent}
+
+## Actions
+${actionsContent}
+
+## Else actions
+${elseActionsContent}
+
+## Fields involved
+${fieldsContent}
+
+## Applies to forms
+${formsContent}
+`;
+}
+
+export function generateDeterministicSecurityRole(role: SecurityRole, ast: SolutionAST): string {
+  const slug = role.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+  // 1. Table privileges table
+  let tablePrivilegesContent = '';
+  if (!role.table_privileges || role.table_privileges.length === 0) {
+    tablePrivilegesContent = '_No table privileges configured for this role._';
+  } else {
+    tablePrivilegesContent = `| Table | Create | Read | Write | Delete | Append | AppendTo | Assign | Share |\n| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+    for (const p of role.table_privileges) {
+      const tablePart =
+        p.table_display_name && p.table_display_name.toLowerCase() !== p.table.toLowerCase()
+          ? `${p.table_display_name} (\`${p.table}\`)`
+          : `\`${p.table}\``;
+      tablePrivilegesContent += `| ${tablePart} | ${p.create} | ${p.read} | ${p.write} | ${p.delete} | ${p.append} | ${p.append_to} | ${p.assign} | ${p.share} |\n`;
+    }
+  }
+
+  // 2. Misc privileges list
+  let miscPrivilegesContent = '';
+  if (!role.misc_privileges || role.misc_privileges.length === 0) {
+    miscPrivilegesContent = '_No miscellaneous privileges configured for this role._';
+  } else {
+    miscPrivilegesContent = role.misc_privileges.map((m) => `- \`${m}\``).join('\n');
+  }
+
+  // 3. Assigned to apps list
+  let assignedAppsContent = '';
+  if (!role.assigned_apps || role.assigned_apps.length === 0) {
+    assignedAppsContent = '_No applications currently assigned to this security role._';
+  } else {
+    assignedAppsContent = role.assigned_apps.map((a) => `- ${a}`).join('\n');
+  }
+
+  return `---
+doc_id: role_${slug}
+doc_type: security_role
+name: ${role.name}
+solution: ${ast.solution.unique_name}
+solution_version: ${ast.solution.version}
+publisher_prefix: ${ast.solution.publisher_prefix || ''}
+tags: [security-role, security, ${slug}]
+---
+
+# Security role: ${role.name}
+
+${role.description ? `> ${role.description}\n\n` : ''}Security role definition and privilege matrix defined in **${ast.solution.display_name}**.
+
+---
+
+## Overview
+- **Name**: ${role.name}
+- **Business unit scope**: ${role.business_unit || 'Organization / Root'}
+- **Description**: ${role.description || '*(No description provided)*'}
+
+## Table privileges
+${tablePrivilegesContent}
+
+## Misc privileges
+${miscPrivilegesContent}
+
+## Assigned to apps
+${assignedAppsContent}
+`;
+}
+
 export interface DocGeneratorOptions {
   concurrency?: number;
 }
@@ -1266,6 +1520,48 @@ export async function generateDocumentationSuite(
         };
       },
     });
+  }
+
+  // Step 7: Business Rules (Each business rule as a separate markdown file)
+  if (ast.business_rules && ast.business_rules.length > 0) {
+    for (const rule of ast.business_rules) {
+      const ruleSlug = `${rule.table}__${rule.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+      tasks.push({
+        label: `Documenting Business Rule: ${rule.name}...`,
+        fn: async (): Promise<DocumentRecord> => {
+          const brContent = generateDeterministicBusinessRule(rule, ast);
+          return {
+            id: `${projectId}_br_${rule.id}`,
+            project_id: projectId,
+            doc_type: 'business_rule',
+            title: `Business Rule: ${rule.name}`,
+            slug: ruleSlug,
+            content_markdown: brContent,
+          };
+        },
+      });
+    }
+  }
+
+  // Step 8: Security Roles (Each security role as a separate markdown file)
+  if (ast.security_roles && ast.security_roles.length > 0) {
+    for (const role of ast.security_roles) {
+      const roleSlug = role.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      tasks.push({
+        label: `Documenting Security Role: ${role.name}...`,
+        fn: async (): Promise<DocumentRecord> => {
+          const roleContent = generateDeterministicSecurityRole(role, ast);
+          return {
+            id: `${projectId}_role_${role.id.replace(/[{}]/g, '')}`,
+            project_id: projectId,
+            doc_type: 'security_role',
+            title: `Security Role: ${role.name}`,
+            slug: roleSlug,
+            content_markdown: roleContent,
+          };
+        },
+      });
+    }
   }
 
   if (tasks.length === 0) {

@@ -17,6 +17,8 @@ import {
   PanelLeftClose,
   PanelLeft,
   MessageSquare,
+  Scale,
+  Shield,
 } from 'lucide-react';
 import { ProjectRecord, DocumentRecord, DocumentType } from '../../types/db';
 import { MermaidDiagram } from './MermaidDiagram';
@@ -178,7 +180,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
   };
 
   const collapseAll = () => {
-    setCollapsedCategories(new Set(['flows', 'canvas_apps', 'other']));
+    setCollapsedCategories(new Set(['business_rules', 'security_roles', 'flows', 'canvas_apps', 'other']));
   };
 
   const getDocIcon = (type: DocumentType) => {
@@ -187,6 +189,10 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
         return <Layers className="w-4 h-4 text-indigo-400 flex-shrink-0" />;
       case 'dataverse':
         return <Database className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
+      case 'business_rule':
+        return <Scale className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
+      case 'security_role':
+        return <Shield className="w-4 h-4 text-amber-400 flex-shrink-0" />;
       case 'flow':
         return <Workflow className="w-4 h-4 text-sky-400 flex-shrink-0" />;
       case 'canvas_app':
@@ -209,16 +215,32 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
   const treeGroups = useMemo(() => {
     const overviewDocs = filteredDocs.filter((d) => d.doc_type === 'overview');
     const dataverseDocs = filteredDocs.filter((d) => d.doc_type === 'dataverse');
+    const brDocs = filteredDocs.filter((d) => d.doc_type === 'business_rule');
+    const roleDocs = filteredDocs.filter((d) => d.doc_type === 'security_role');
     const flowDocs = filteredDocs.filter((d) => d.doc_type === 'flow');
     const appDocs = filteredDocs.filter((d) => d.doc_type === 'canvas_app');
     const envDocs = filteredDocs.filter((d) => d.doc_type === 'env_vars');
     const otherDocs = filteredDocs.filter(
-      (d) => !['overview', 'dataverse', 'flow', 'canvas_app', 'env_vars'].includes(d.doc_type)
+      (d) => !['overview', 'dataverse', 'business_rule', 'security_role', 'flow', 'canvas_app', 'env_vars'].includes(d.doc_type)
     );
 
     return {
       standalone: [...overviewDocs, ...dataverseDocs, ...envDocs],
       folders: [
+        {
+          id: 'business_rules',
+          name: 'Business Rules',
+          icon: <Scale className="w-4 h-4 text-emerald-400 flex-shrink-0" />,
+          docs: brDocs,
+          totalCount: documents.filter((d) => d.doc_type === 'business_rule').length,
+        },
+        {
+          id: 'security_roles',
+          name: 'Security Roles',
+          icon: <Shield className="w-4 h-4 text-amber-400 flex-shrink-0" />,
+          docs: roleDocs,
+          totalCount: documents.filter((d) => d.doc_type === 'security_role').length,
+        },
         {
           id: 'flows',
           name: 'Cloud Flows',
@@ -239,7 +261,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
           icon: <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />,
           docs: otherDocs,
           totalCount: documents.filter(
-            (d) => !['overview', 'dataverse', 'flow', 'canvas_app', 'env_vars'].includes(d.doc_type)
+            (d) => !['overview', 'dataverse', 'business_rule', 'security_role', 'flow', 'canvas_app', 'env_vars'].includes(d.doc_type)
           ).length,
         },
       ].filter((f) => f.docs.length > 0),
@@ -435,6 +457,10 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                           ? doc.title.replace(/^Flow:\s*/i, '')
                           : doc.doc_type === 'canvas_app'
                           ? doc.title.replace(/^App:\s*/i, '')
+                          : doc.doc_type === 'business_rule'
+                          ? doc.title.replace(/^Business Rule:\s*/i, '')
+                          : doc.doc_type === 'security_role'
+                          ? doc.title.replace(/^Security Role:\s*/i, '')
                           : doc.title;
 
                       return (
@@ -508,6 +534,10 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                   ? 'Canvas Apps'
                   : activeDoc?.doc_type === 'dataverse'
                   ? 'Dataverse'
+                  : activeDoc?.doc_type === 'business_rule'
+                  ? 'Business Rules'
+                  : activeDoc?.doc_type === 'security_role'
+                  ? 'Security Roles'
                   : 'Architecture'}
               </span>
               {activeDoc && (

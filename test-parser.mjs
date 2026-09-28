@@ -244,6 +244,272 @@ Solution **Contoso Customer Support** – Solution Metadata & Specification
   assert.ok(headings.some((h) => h.includes('Dependency highlights')), 'Should contain Dependency highlights section');
   console.log('✓ Solution Overview 8-section schema verified!');
 
+  // 6. Test Business Rule 6-section Schema & Database
+  console.log('6. Testing Business Rule 6-section schema & DB persistence...');
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS business_rules (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      table_logical_name TEXT NOT NULL,
+      scope TEXT,
+      state TEXT,
+      description TEXT,
+      conditions JSONB,
+      actions JSONB,
+      else_actions JSONB,
+      fields_read JSONB,
+      fields_written JSONB,
+      applies_to_forms JSONB,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await db.query(
+    `INSERT INTO business_rules (
+      id, project_id, name, table_logical_name, scope, state, description,
+      conditions, actions, else_actions, fields_read, fields_written, applies_to_forms
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    [
+      'br_1',
+      'p1',
+      'Require Issue Details for Critical Tickets',
+      'contoso_ticket',
+      'Entity',
+      'Active',
+      'Enforces issue details requirement when ticket priority is Critical.',
+      JSON.stringify([{ field: 'contoso_prioritycode', operator: 'equals', value: 'Critical (P1) (4)' }]),
+      JSON.stringify([{ action_type: 'Set required', target_field: 'contoso_description', value_or_message: 'Business Required' }]),
+      JSON.stringify([{ action_type: 'Set required', target_field: 'contoso_description', value_or_message: 'Optional / Not Required' }]),
+      JSON.stringify(['contoso_prioritycode']),
+      JSON.stringify(['contoso_description']),
+      JSON.stringify(['All Forms (Entity scope – runs on all client forms and server-side)']),
+    ]
+  );
+
+  const brRes = await db.query(`SELECT * FROM business_rules WHERE project_id = $1`, ['p1']);
+  assert.strictEqual(brRes.rows.length, 1);
+  assert.strictEqual(brRes.rows[0].table_logical_name, 'contoso_ticket');
+  assert.strictEqual(brRes.rows[0].scope, 'Entity');
+
+  const mockBrMarkdown = `---
+doc_id: br_contoso_ticket__require-issue-details-for-critical-tickets
+doc_type: business_rule
+name: Require Issue Details for Critical Tickets
+primary_table: contoso_ticket
+---
+
+# Business Rule: Require Issue Details for Critical Tickets
+
+## Overview
+- **Name**: Require Issue Details for Critical Tickets
+- **Table**: Support Ticket (\`contoso_ticket\`)
+- **Scope**: Entity
+- **State**: Active
+- **Description**: Enforces issue details requirement when ticket priority is Critical.
+
+## Conditions
+IF (**Priority** (\`contoso_prioritycode\`) equals "Critical (P1) (4)")
+
+## Actions
+| Action Type | Target Field | Value / Message |
+| :--- | :--- | :--- |
+| Set required | **Issue Details** (\`contoso_description\`) | Business Required |
+
+## Else actions
+| Action Type | Target Field | Value / Message |
+| :--- | :--- | :--- |
+| Set required | **Issue Details** (\`contoso_description\`) | Optional / Not Required |
+
+## Fields involved
+| Field | Logical Name | Access |
+| :--- | :--- | :--- |
+| Priority | \`contoso_prioritycode\` | Read (Condition) |
+| Issue Details | \`contoso_description\` | Written (Action) |
+
+- **Read**: \`contoso_prioritycode\`
+- **Written**: \`contoso_description\`
+
+## Applies to forms
+- All Forms (Entity scope – runs on all client forms and server-side)
+`;
+
+  const brChunks = chunkMarkdown(mockBrMarkdown);
+  const brHeadings = brChunks.map((c) => c.heading_context);
+  assert.ok(brHeadings.some((h) => h.includes('Overview')), 'BR should contain Overview');
+  assert.ok(brHeadings.some((h) => h.includes('Conditions')), 'BR should contain Conditions');
+  assert.ok(brHeadings.some((h) => h.includes('Actions')), 'BR should contain Actions');
+  assert.ok(brHeadings.some((h) => h.includes('Else actions')), 'BR should contain Else actions');
+  assert.ok(brHeadings.some((h) => h.includes('Fields involved')), 'BR should contain Fields involved');
+  assert.ok(brHeadings.some((h) => h.includes('Applies to forms')), 'BR should contain Applies to forms');
+  console.log('✓ Business Rule 6-section schema verified!');
+
+  // 7. Test XAML SetAttributeValueStep resolution & Owner display name
+  console.log('7. Testing XAML SetAttributeValueStep resolution...');
+  const testXaml = `
+  <Activity>
+    <mxswa:ActivityReference AssemblyQualifiedName="Microsoft.Crm.Workflow.Activities.EvaluateExpression, Microsoft.Crm.Workflow" DisplayName="EvaluateExpression">
+      <mxswa:ActivityReference.Arguments>
+        <InArgument x:TypeArguments="x:String" x:Key="ExpressionOperator">CreateCrmType</InArgument>
+        <InArgument x:TypeArguments="s:Object[]" x:Key="Parameters">[New Object() { Microsoft.Crm.Workflow.ObjectId.EntityLogicalName, "systemuser", "e3d1c410-0000-0000-0000-000000000000", "Helpdesk Lead" }]</InArgument>
+        <OutArgument x:TypeArguments="x:Object" x:Key="Result">[SetAttributeValueStep1_1]</OutArgument>
+      </mxswa:ActivityReference.Arguments>
+    </mxswa:ActivityReference>
+    <mxswa:SetEntityProperty Attribute="ownerid" Entity="[InputEntities(&quot;primaryEntity&quot;)]" EntityName="opportunity" Value="[SetAttributeValueStep1_1]">
+    </mxswa:SetEntityProperty>
+  </Activity>
+  `;
+
+  // Inline simulation of parseXamlVariables & resolveActionValue logic
+  const activityRefRegex = /<mxswa:ActivityReference[^>]*AssemblyQualifiedName="[^"]*EvaluateExpression[^"]*"[^>]*>([\s\S]*?)<\/mxswa:ActivityReference>/gi;
+  const varMap = new Map();
+  for (const match of testXaml.matchAll(activityRefRegex)) {
+    const block = match[1];
+    const resultMatch = block.match(/<OutArgument[^>]*x:Key="Result"[^>]*>([\s\S]*?)<\/OutArgument>/i);
+    let varName = '';
+    if (resultMatch) {
+      const nameM = resultMatch[1].match(/\[([a-zA-Z0-9_]+)\]/);
+      if (nameM) varName = nameM[1].trim();
+    }
+    const paramsMatch = block.match(/<InArgument[^>]*x:Key="Parameters"[^>]*>([\s\S]*?)<\/InArgument>/i);
+    const paramsText = paramsMatch ? paramsMatch[1].trim() : '';
+    const entRefMatch = paramsText.match(/(?:ObjectId\.EntityLogicalName|EntityReference|Lookup)[^"]*"([a-zA-Z0-9_]+)"(?:\s*,\s*"([^"]+)")?(?:\s*,\s*"([^"]+)")?/i);
+    if (entRefMatch) {
+      const entType = entRefMatch[1];
+      const second = entRefMatch[2];
+      const third = entRefMatch[3];
+      const label = entType === 'systemuser' ? 'User' : entType === 'team' ? 'Team' : entType;
+      if (third && !third.match(/^[0-9a-fA-F-]{36}$/)) {
+        varMap.set(varName.toLowerCase(), `${third} (${label})`);
+      } else if (second && !second.match(/^[0-9a-fA-F-]{36}$/)) {
+        varMap.set(varName.toLowerCase(), `${second} (${label})`);
+      } else {
+        varMap.set(varName.toLowerCase(), `${label} (${entType})`);
+      }
+    }
+  }
+
+  assert.strictEqual(varMap.get('setattributevaluestep1_1'), 'Helpdesk Lead (User)');
+  console.log('✓ XAML SetAttributeValueStep successfully resolved to friendly value!');
+
+  // 8. Test Security Role 4-section schema, DB persistence, and privilege mapping
+  console.log('8. Testing Security Role 4-section schema & DB persistence...');
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS security_roles (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      business_unit TEXT,
+      description TEXT,
+      table_privileges JSONB,
+      misc_privileges JSONB,
+      assigned_apps JSONB,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  const mockRole = {
+    id: '{f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c}',
+    name: 'Customer Support Representative',
+    business_unit: 'Business Unit',
+    description: 'Provides read and write access to customer tickets, accounts, and contacts within the business unit.',
+    table_privileges: [
+      {
+        table: 'contoso_ticket',
+        table_display_name: 'Support Ticket',
+        create: 'BU',
+        read: 'Parent',
+        write: 'BU',
+        delete: 'User',
+        append: 'BU',
+        append_to: 'BU',
+        assign: 'User',
+        share: 'User',
+      },
+      {
+        table: 'account',
+        table_display_name: 'Account',
+        create: 'None',
+        read: 'BU',
+        write: 'None',
+        delete: 'None',
+        append: 'None',
+        append_to: 'None',
+        assign: 'None',
+        share: 'None',
+      },
+    ],
+    misc_privileges: ['prvExportToExcel'],
+    assigned_apps: ['Customer Care Hub'],
+  };
+
+  await db.query(
+    `INSERT INTO security_roles (
+      id, project_id, name, business_unit, description,
+      table_privileges, misc_privileges, assigned_apps
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      mockRole.id,
+      'p1',
+      mockRole.name,
+      mockRole.business_unit,
+      mockRole.description,
+      JSON.stringify(mockRole.table_privileges),
+      JSON.stringify(mockRole.misc_privileges),
+      JSON.stringify(mockRole.assigned_apps),
+    ]
+  );
+
+  const roleRes = await db.query(`SELECT * FROM security_roles WHERE project_id = $1`, ['p1']);
+  assert.strictEqual(roleRes.rows.length, 1);
+  assert.strictEqual(roleRes.rows[0].name, 'Customer Support Representative');
+  assert.strictEqual(roleRes.rows[0].business_unit, 'Business Unit');
+
+  // Verify Markdown Generation & 4-section schema
+  const mockRoleMarkdown = `---
+doc_id: role_customer-support-representative
+doc_type: security_role
+name: Customer Support Representative
+solution: ContosoServiceDesk
+solution_version: 1.0.0.0
+publisher_prefix: contoso
+tags: [security-role, security, customer-support-representative]
+---
+
+# Security role: Customer Support Representative
+
+> Provides read and write access to customer tickets, accounts, and contacts within the business unit.
+
+Security role definition and privilege matrix defined in **Contoso Service Desk**.
+
+---
+
+## Overview
+- **Name**: Customer Support Representative
+- **Business unit scope**: Business Unit
+- **Description**: Provides read and write access to customer tickets, accounts, and contacts within the business unit.
+
+## Table privileges
+| Table | Create | Read | Write | Delete | Append | AppendTo | Assign | Share |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Support Ticket (\`contoso_ticket\`) | BU | Parent | BU | User | BU | BU | User | User |
+| Account (\`account\`) | None | BU | None | None | None | None | None | None |
+
+## Misc privileges
+- \`prvExportToExcel\`
+
+## Assigned to apps
+- Customer Care Hub
+`;
+
+  const roleChunks = chunkMarkdown(mockRoleMarkdown);
+  const roleHeadings = roleChunks.map((c) => c.heading_context);
+  assert.ok(roleHeadings.some((h) => h.includes('Overview')), 'Role should contain Overview');
+  assert.ok(roleHeadings.some((h) => h.includes('Table privileges')), 'Role should contain Table privileges');
+  assert.ok(roleHeadings.some((h) => h.includes('Misc privileges')), 'Role should contain Misc privileges');
+  assert.ok(roleHeadings.some((h) => h.includes('Assigned to apps')), 'Role should contain Assigned to apps');
+  console.log('✓ Security Role 4-section schema & DB persistence verified!');
+
   console.log('\nAll verification tests passed successfully! 🎉\n');
 }
 

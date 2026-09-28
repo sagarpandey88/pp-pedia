@@ -25,6 +25,8 @@ export type DocumentType =
   | 'canvas_app'
   | 'env_vars'
   | 'web_resources'
+  | 'business_rule'
+  | 'security_role'
   | 'index';
 
 export interface DocumentRecord {
@@ -83,7 +85,7 @@ export interface FormEventHandlerRecord {
 export interface ComponentDependencyRecord {
   id: string;
   project_id: string;
-  source_type: 'flow' | 'canvas_app' | 'javascript' | 'relationship' | 'formula';
+  source_type: 'flow' | 'canvas_app' | 'javascript' | 'relationship' | 'formula' | 'security_role';
   source_id: string;
   source_name: string;
   location_detail?: string;
