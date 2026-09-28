@@ -5,30 +5,54 @@ import { formatConnectionReference } from './connectorUtils';
 export function buildOverviewPrompt(ast: SolutionAST): { system: string; user: string } {
   const system = `You are a Microsoft Power Platform Solution Architect and Technical Writer.
 Generate comprehensive, executive-ready technical documentation for a Power Platform solution.
-Include an executive summary, high-level solution architecture, component inventory, data flow explanation, and deployment considerations.
-Always output valid GitHub Flavored Markdown with clean headings, bullet points, and Mermaid diagrams where relevant.`;
+Your output must strictly follow the required solution overview section structure using GitHub Flavored Markdown with clean tables and bullet points.`;
+
+  const totalCols = ast.entities.reduce((acc, e) => acc + e.attributes.length, 0);
 
   const user = `Document the following Power Platform solution:
 - Display Name: ${ast.solution.display_name}
 - Unique Name: ${ast.solution.unique_name}
 - Version: ${ast.solution.version}
-- Type: ${ast.solution.is_managed ? 'Managed' : 'Unmanaged'}
-- Publisher: ${ast.solution.publisher_name || 'Not specified'} (${ast.solution.publisher_prefix || 'new'})
+- Package Type: ${ast.solution.is_managed ? 'Managed' : 'Unmanaged'}
+- Publisher: ${ast.solution.publisher_name || 'Standard Publisher'} (${ast.solution.publisher_prefix || 'new'})
 - Description: ${ast.solution.description || 'No description provided'}
 
-Component Inventory:
-- Dataverse Entities: ${ast.entities.length} (${ast.entities.map((e) => e.display_name).join(', ')})
+Component Summary:
+- Dataverse Tables: ${ast.entities.length} tables, ${totalCols} total columns (${ast.entities.map((e) => `${e.display_name} [${e.logical_name}]: ${e.attributes.length} cols, ${e.forms_count ?? 0} forms, ${e.views_count ?? 0} views`).join(', ')})
 - Cloud Flows: ${ast.flows.length} (${ast.flows.map((f) => cleanFlowDisplayName(f.display_name || f.name)).join(', ')})
-- Canvas Apps: ${ast.canvas_apps.length} (${ast.canvas_apps.map((a) => a.display_name).join(', ')})
-- Environment Variables: ${ast.environment_variables.length} (${ast.environment_variables.map((v) => v.display_name).join(', ')})
+- Canvas Apps: ${ast.canvas_apps.length} (${ast.canvas_apps.map((a) => `${a.display_name} (${a.screens.length} screens)`).join(', ')})
+- Model-Driven Apps / Sitemap: ${ast.site_map ? ast.site_map.areas.map((a) => a.title).join(', ') : 'None'}
+- Environment Variables: ${ast.environment_variables.length} (${ast.environment_variables.map((v) => `${v.display_name} (${v.schema_name}): ${v.type}`).join(', ')})
 - Relationships: ${ast.stats.relationship_count}
+- Dependencies: ${ast.dependencies?.length || 0} cross-component dependencies
 
-Please structure the document with:
-1. Executive Summary & Business Purpose
-2. Solution Metadata & Configuration Summary
-3. Architecture Overview (including a Mermaid flowchart TD diagram showing how users, apps, flows, and Dataverse interact)
-4. Key Solution Components & Design Patterns
-5. Deployment & ALM Considerations`;
+You MUST structure the documentation using EXACTLY the following 8 sections and level-2 markdown headers (##):
+
+## Overview
+– Include unique name, display name, version, publisher, managed/unmanaged status, and description in a clean table and brief summary.
+
+## Component inventory
+– Table with columns: Component Type | Count (listing Dataverse tables, columns, relationships, cloud flows, canvas apps, model-driven apps, environment variables, connection references, etc.)
+
+## Apps
+– Bulleted list of canvas applications and model-driven applications with descriptive details and markdown links.
+
+## Automation
+– Table of flows / workflows / BPFs / plugins summary with columns: Name | Type | Trigger / Execution | Scope / Actions | Status.
+
+## Data model
+– Table listing all Dataverse tables with record counts: Table | Logical Name | Columns | Forms | Views.
+
+## Connectors used
+– Table with columns: Connector | # Flows | # Apps | Connection References.
+
+## Environment variables
+– Table with columns: Name | Type | Default | Current.
+
+## Dependency highlights
+– Table of cross-component dependencies with columns: Source Component | Type | Operation | Target Entity / Field | Context / Details.
+
+Ensure all 8 headers match this exact format. Output clean tables and concise, informative markdown.`;
 
   return { system, user };
 }

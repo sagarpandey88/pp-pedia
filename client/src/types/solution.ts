@@ -60,6 +60,8 @@ export interface DataverseEntity {
   entity_set_name?: string;
   attributes: DataverseAttribute[];
   relationships: DataverseRelationship[];
+  forms_count?: number;
+  views_count?: number;
 }
 
 export interface FlowTrigger {

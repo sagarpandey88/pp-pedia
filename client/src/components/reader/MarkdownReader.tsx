@@ -559,6 +559,31 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                     pre({ children }: any) {
                       return <>{children}</>;
                     },
+                    a({ href, children, ...props }: any) {
+                      const isInternal = href && !href.startsWith('http://') && !href.startsWith('https://');
+                      return (
+                        <a
+                          href={href}
+                          onClick={(e) => {
+                            if (isInternal) {
+                              const cleanSlug = href.replace(/^[#/]+/, '');
+                              if (!cleanSlug) return;
+                              const target = documents.find((d) => d.slug === cleanSlug || d.id === cleanSlug);
+                              if (target) {
+                                e.preventDefault();
+                                onSelectDoc(target.id);
+                              }
+                            }
+                          }}
+                          target={isInternal ? undefined : '_blank'}
+                          rel={isInternal ? undefined : 'noopener noreferrer'}
+                          className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition cursor-pointer font-medium"
+                          {...props}
+                        >
+                          {children}
+                        </a>
+                      );
+                    },
                     code({ node, className, children, ...props }: any) {
                       const match = /language-(\w+)/.exec(className || '');
                       const lang = match ? match[1] : '';

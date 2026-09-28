@@ -345,6 +345,8 @@ export function parseCustomizationsXml(xmlText: string): {
       }
     }
 
+    const viewEls = entityEl.querySelectorAll('SavedQueries > savedquery, savedqueries > savedquery');
+
     entities.push({
       logical_name: logicalName,
       schema_name: entityEl.getAttribute('Name') || logicalName,
@@ -354,6 +356,8 @@ export function parseCustomizationsXml(xmlText: string): {
       primary_name_attribute: primaryNameAttr,
       attributes,
       relationships,
+      forms_count: formEls.length,
+      views_count: viewEls.length,
     });
   }
 
@@ -937,10 +941,33 @@ export async function unpackAndParseSolution(
     ...jsLiterals,
   ];
 
-  // Calculate statistics
+  // Calculate statistics and refine counts
   let relationshipCount = 0;
   for (const e of entities) {
     relationshipCount += e.relationships.length;
+
+    // Check if zip contains unpacked folder paths: Entities/<name>/FormXml/ or Entities/<name>/SavedQueries/
+    const prefix = `entities/${e.logical_name.toLowerCase()}/`;
+    const formFiles = Object.keys(zip.files).filter(
+      (f) => f.toLowerCase().startsWith(prefix) && f.toLowerCase().includes('/formxml/') && f.toLowerCase().endsWith('.xml')
+    );
+    const viewFiles = Object.keys(zip.files).filter(
+      (f) => f.toLowerCase().startsWith(prefix) && f.toLowerCase().includes('/savedqueries/') && f.toLowerCase().endsWith('.xml')
+    );
+    if (formFiles.length > (e.forms_count || 0)) {
+      e.forms_count = formFiles.length;
+    }
+    if (viewFiles.length > (e.views_count || 0)) {
+      e.views_count = viewFiles.length;
+    }
+    // Also correlate with registered form event handlers
+    const matchedHandlers = formEventHandlers.filter(
+      (h) => h.entity_name.toLowerCase() === e.logical_name.toLowerCase()
+    );
+    const distinctForms = new Set(matchedHandlers.map((h) => h.form_id || h.form_name)).size;
+    if (distinctForms > (e.forms_count || 0)) {
+      e.forms_count = distinctForms;
+    }
   }
 
   const scriptCount = webResources.filter((w) => w.type === 'JavaScript').length;

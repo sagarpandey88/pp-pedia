@@ -184,6 +184,66 @@ async function testDb() {
   assert.ok(solXml.includes('TestSol'));
   console.log('✓ JSZip roundtrip verification passed!');
 
+  // 5. Test Solution Overview 8-section Markdown Schema
+  console.log('5. Testing Solution Overview 8-section schema...');
+  const mockOverviewMarkdown = `# Contoso Customer Support
+
+## Overview
+Solution **Contoso Customer Support** – Solution Metadata & Specification
+| Property | Value |
+| :--- | :--- |
+| **Unique Name** | \`ContosoCustomerSupport\` |
+| **Display Name** | Contoso Customer Support |
+| **Version** | \`2.1.0.4\` |
+| **Publisher** | Contoso Technologies (\`contoso\`) |
+| **Managed / Unmanaged** | Unmanaged |
+
+## Component inventory
+| Type | Count |
+| :--- | :--- |
+| Dataverse Tables | 3 |
+
+## Apps
+- **[Support Desk App](app-supportdeskapp)** (Canvas App)
+
+## Automation
+| Name | Type | Trigger / Execution | Scope / Actions | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| [Incident Escalation](flow-incident-escalation) | Cloud Flow | Automated | 4 action steps | Active |
+
+## Data model
+| Table | Logical Name | Columns | Forms | Views |
+| :--- | :--- | :--- | :--- | :--- |
+| **Support Ticket** | \`contoso_ticket\` | 9 | 1 | 2 |
+
+## Connectors used
+| Connector | # Flows | # Apps | Connection References |
+| :--- | :--- | :--- | :--- |
+| **Microsoft Dataverse** | 1 | 1 | \`contoso_dataverse\` |
+
+## Environment variables
+| Name | Type | Default | Current |
+| :--- | :--- | :--- | :--- |
+| **Support Escalation Email** (\`contoso_SupportEscalationEmail\`) | \`String\` | \`admin@contoso.com\` | *(not set)* |
+
+## Dependency highlights
+| Source Component | Type | Operation | Target Entity / Field | Context / Details |
+| :--- | :--- | :--- | :--- | :--- |
+| **Incident Escalation** | \`flow\` | \`READ\` | \`contoso_ticket\` | When_a_ticket_is_created |
+`;
+
+  const overviewChunks = chunkMarkdown(mockOverviewMarkdown);
+  const headings = overviewChunks.map((c) => c.heading_context);
+  assert.ok(headings.some((h) => h.includes('Overview')), 'Should contain Overview section');
+  assert.ok(headings.some((h) => h.includes('Component inventory')), 'Should contain Component inventory section');
+  assert.ok(headings.some((h) => h.includes('Apps')), 'Should contain Apps section');
+  assert.ok(headings.some((h) => h.includes('Automation')), 'Should contain Automation section');
+  assert.ok(headings.some((h) => h.includes('Data model')), 'Should contain Data model section');
+  assert.ok(headings.some((h) => h.includes('Connectors used')), 'Should contain Connectors used section');
+  assert.ok(headings.some((h) => h.includes('Environment variables')), 'Should contain Environment variables section');
+  assert.ok(headings.some((h) => h.includes('Dependency highlights')), 'Should contain Dependency highlights section');
+  console.log('✓ Solution Overview 8-section schema verified!');
+
   console.log('\nAll verification tests passed successfully! 🎉\n');
 }
 
