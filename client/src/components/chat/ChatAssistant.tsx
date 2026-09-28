@@ -23,6 +23,7 @@ import { ProjectRecord, SimilarityResult } from '../../types/db';
 import { TokenUsage } from '../../types/solution';
 import { askRAGAssistant, ChatMessage } from '../../services/rag/ragService';
 import { AgentActivityStep } from '../../services/agent/agentTypes';
+import { getAISettings, getActiveAIProvider } from '../../services/generator/docGenerator';
 import { CitationCard } from './CitationCard';
 import { AgentActivityTrail } from './AgentActivityTrail';
 import { MermaidDiagram } from '../reader/MermaidDiagram';
@@ -294,6 +295,16 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
+  const aiSettings = getAISettings();
+  const activeProvider = getActiveAIProvider(aiSettings);
+
+  const providerBadge =
+    activeProvider === 'google'
+      ? { text: `Google Agents SDK • ${aiSettings.googleModel || 'Gemini'}`, style: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
+      : activeProvider === 'openai'
+      ? { text: `OpenAI Agent SDK • ${aiSettings.model || 'GPT'}`, style: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' }
+      : { text: 'Offline Mode • Local RAG', style: 'bg-slate-700/30 text-slate-300 border-slate-600/40' };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -487,8 +498,8 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
             <div>
               <h2 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
                 PP AI
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-mono">
-                  OpenAI Agent SDK • Multi-Tool
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono border ${providerBadge.style}`}>
+                  {providerBadge.text}
                 </span>
               </h2>
               <p className="text-xs text-slate-400">

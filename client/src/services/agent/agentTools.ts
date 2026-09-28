@@ -1003,3 +1003,194 @@ export function getAllAgentTools() {
     createListSolutionsTool(),
   ];
 }
+
+export const GOOGLE_TOOL_DECLARATIONS = [
+  {
+    name: 'analyze_column_impact',
+    description:
+      'High-precision blast radius analysis for deleting or modifying a Dataverse column/attribute. ' +
+      'Queries relational dependencies across Cloud Flows, Canvas Apps, JavaScript Web Resources, ' +
+      'Form Event Handlers, and Foreign Key relationships.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        table_name: { type: 'string', description: 'The logical name of the Dataverse table, e.g. "account", "contact"' },
+        column_name: { type: 'string', description: 'The logical name of the column/attribute being evaluated, e.g. "telephone1"' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+      required: ['table_name', 'column_name'],
+    },
+  },
+  {
+    name: 'analyze_validation_impact',
+    description:
+      'Evaluates the impact of adding a business rule validation, plugin validation, or making a column required. ' +
+      'Identifies flows and apps that write to this table without setting this column.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        table_name: { type: 'string', description: 'The logical name of the Dataverse table, e.g. "account"' },
+        column_name: { type: 'string', description: 'The column being made required or validated, e.g. "emailaddress1"' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+      required: ['table_name', 'column_name'],
+    },
+  },
+  {
+    name: 'query_flow_integrations',
+    description:
+      'Finds Cloud Flows using specific external services, connectors, or APIs. ' +
+      'Useful for finding all flows touching Power BI, Dataverse, Teams, SQL, HTTP, or premium connectors.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        connector_name: { type: 'string', description: 'Filter by connector name, e.g. "Dataverse", "Power BI", "Teams", "SQL", "HTTP"' },
+        is_premium: { type: 'boolean', description: 'Filter to only premium connectors (true) or standard connectors (false)' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+    },
+  },
+  {
+    name: 'audit_web_resources',
+    description:
+      'Audits client-side JavaScript Web Resources in the solution for deprecated Xrm.Page APIs, ' +
+      'direct DOM manipulation, and lists registered form event handlers.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        check_deprecated_only: { type: 'boolean', description: 'If true, filters to only web resources containing deprecated API usages' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+    },
+  },
+  {
+    name: 'audit_hardcoded_literals',
+    description:
+      'Audits hardcoded GUIDs, environment URLs, and email addresses across Cloud Flows, Canvas Apps, ' +
+      'and JavaScript Web Resources to detect environment drift and ALM portability risks.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        literal_type: { type: 'string', enum: ['GUID', 'URL', 'EMAIL', 'ALL'], description: 'Type of hardcoded literal to audit' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+    },
+  },
+  {
+    name: 'semantic_search',
+    description:
+      'Search documentation chunks using hybrid dense vector similarity + lexical keyword search. ' +
+      'Returns relevant excerpts with document titles, heading context, and similarity scores.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The search query or concept' },
+        limit: { type: 'integer', description: 'Maximum number of top chunks to return (1-10)' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'list_documents',
+    description:
+      'List all generated documentation markdown files in IndexedDB for the current solution or across all solutions.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Optional solution/project ID to filter documents' },
+      },
+    },
+  },
+  {
+    name: 'read_document_markdown',
+    description:
+      'Read the full content or a specific section of a documentation file by slug or document ID.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        identifier: { type: 'string', description: 'The document slug (e.g. "overview", "dataverse-schema") or document ID' },
+        section: { type: 'string', description: 'Optional heading or section name to filter and read only that specific section' },
+        projectId: { type: 'string', description: 'Optional solution/project ID if disambiguation is required' },
+      },
+      required: ['identifier'],
+    },
+  },
+  {
+    name: 'inspect_dataverse_entity',
+    description:
+      'Inspect detailed schema, columns, attributes, and 1:N / N:1 / N:N relationships of a Dataverse entity.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        logical_name: { type: 'string', description: 'Dataverse entity logical name, e.g. "account", "contact"' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+      required: ['logical_name'],
+    },
+  },
+  {
+    name: 'inspect_cloud_flow',
+    description:
+      'Inspect a Cloud Flow trigger, action hierarchy, run_after dependencies, and connector calls.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        flow_name_or_id: { type: 'string', description: 'The name, display name, or workflow ID of the Cloud Flow' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+      required: ['flow_name_or_id'],
+    },
+  },
+  {
+    name: 'inspect_canvas_app',
+    description:
+      'Inspect a Canvas App screens, components, control hierarchy, and Power Fx formulas.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        app_name: { type: 'string', description: 'The name or display name of the Canvas App' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+      required: ['app_name'],
+    },
+  },
+  {
+    name: 'list_solutions',
+    description:
+      'List all ingested Power Platform solutions stored in local IndexedDB / PGlite, with component counts.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+];
+
+export interface GoogleAgentToolSet {
+  tools: Array<{
+    functionDeclarations: typeof GOOGLE_TOOL_DECLARATIONS;
+  }>;
+  executorMap: Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>;
+}
+
+export function getGoogleAgentTools(): GoogleAgentToolSet {
+  const tools = getAllAgentTools();
+  const executorMap = new Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>();
+
+  for (const t of tools) {
+    const toolName = (t as any).name;
+    executorMap.set(toolName, async (args, context) => {
+      const inputStr = typeof args === 'string' ? args : JSON.stringify(args ?? {});
+      return (t as any).invoke({ context }, inputStr);
+    });
+  }
+
+  return {
+    tools: [
+      {
+        functionDeclarations: GOOGLE_TOOL_DECLARATIONS,
+      },
+    ],
+    executorMap,
+  };
+}
