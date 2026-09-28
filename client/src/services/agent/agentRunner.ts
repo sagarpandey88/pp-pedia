@@ -1,6 +1,6 @@
 import { Agent, run, OpenAIChatCompletionsModel } from '@openai/agents';
 import { OpenAI } from 'openai';
-import { getAISettings } from '../generator/docGenerator';
+import { getAISettings, getActiveAIProvider } from '../generator/docGenerator';
 import { getAllAgentTools } from './agentTools';
 import { AgentAnswer, AgentExecutionContext, AgentActivityStep } from './agentTypes';
 import { SimilarityResult } from '../../types/db';
@@ -96,22 +96,18 @@ async function runOfflineFallback(
   }
 }
 
+import { runGoogleAgentAssistant } from './googleAgentRunner';
+
 /**
  * Executes an autonomous, tool-calling agent run using the OpenAI Agents SDK.
  */
-export async function runAgenticAssistant(
+async function runOpenAIAgentAssistant(
   query: string,
   projectId?: string,
   conversationHistory: ChatHistoryItem[] = [],
   onActivity?: (steps: AgentActivityStep[]) => void
 ): Promise<AgentAnswer> {
   const settings = getAISettings();
-  const hasApiKey = !settings.forceLocalAnswers && Boolean(settings.apiKey && settings.apiKey.length > 5);
-
-  if (!hasApiKey) {
-    return runOfflineFallback(query, projectId, onActivity);
-  }
-
   const context: AgentExecutionContext = {
     projectId,
     citations: [],
@@ -224,4 +220,40 @@ Strategy:
       content: `*(Agent notice: Encountered an API error [${err?.message || err}]. Showing local documentation results)*\n\n${fallback.content}`,
     };
   }
+}
+
+/**
+ * Main entry point: dispatches autonomous agent reasoning to either Google Agents SDK
+ * or OpenAI Agents SDK based on user settings, with automatic graceful fallback to local vector search.
+ */
+export async function runAgenticAssistant(
+  query: string,
+  projectId?: string,
+  conversationHistory: ChatHistoryItem[] = [],
+  onActivity?: (steps: AgentActivityStep[]) => void
+): Promise<AgentAnswer> {
+  const settings = getAISettings();
+  const activeProvider = getActiveAIProvider(settings);
+
+  // If active provider is Google (selected button when both have keys, or only Google key present)
+  if (activeProvider === 'google') {
+    try {
+      return await runGoogleAgentAssistant(query, projectId, conversationHistory, onActivity);
+    } catch (err: any) {
+      console.warn('Google Agent SDK execution error, falling back to local synthesis:', err);
+      const fallback = await runOfflineFallback(query, projectId, onActivity);
+      return {
+        ...fallback,
+        content: `*(Agent notice: Encountered a Google Gemini error [${err?.message || err}]. Showing local documentation results)*\n\n${fallback.content}`,
+      };
+    }
+  }
+
+  // If active provider is OpenAI (selected button when both have keys, or only OpenAI key present)
+  if (activeProvider === 'openai') {
+    return runOpenAIAgentAssistant(query, projectId, conversationHistory, onActivity);
+  }
+
+  // Offline fallback when no keys are configured or local answers forced
+  return runOfflineFallback(query, projectId, onActivity);
 }

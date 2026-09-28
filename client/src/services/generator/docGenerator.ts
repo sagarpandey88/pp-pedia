@@ -8,31 +8,93 @@ import {
   buildFlowPrompt,
   buildCanvasAppPrompt,
 } from './promptBuilder';
+import { GoogleGenAI } from '@google/genai';
+
+export type AIProvider = 'openai' | 'google';
 
 export interface AISettings {
+  provider: AIProvider;
   apiKey: string;
   baseUrl: string;
   model: string;
+  googleApiKey: string;
+  googleModel: string;
   forceDeterministicDocs?: boolean;
   forceLocalAnswers?: boolean;
 }
 
 export function getAISettings(): AISettings {
+  const storedProvider = (localStorage.getItem('pp_pedia_ai_provider') as AIProvider) || 'openai';
   const apiKey = localStorage.getItem('pp_pedia_openai_key') || '';
   const baseUrl = localStorage.getItem('pp_pedia_openai_base_url') || 'https://api.openai.com/v1';
   const model = localStorage.getItem('pp_pedia_openai_model') || 'gpt-4o-mini';
+  const googleApiKey = localStorage.getItem('pp_pedia_google_key') || '';
+  const googleModel = localStorage.getItem('pp_pedia_google_model') || 'gemini-2.5-flash';
   const forceDeterministicDocs = localStorage.getItem('pp_pedia_force_deterministic_docs') === 'true';
   const forceLocalAnswers = localStorage.getItem('pp_pedia_force_local_answers') === 'true';
 
-  return { apiKey, baseUrl, model, forceDeterministicDocs, forceLocalAnswers };
+  let provider = storedProvider;
+  if (!localStorage.getItem('pp_pedia_ai_provider')) {
+    if (apiKey.length > 5) {
+      provider = 'openai';
+    } else if (googleApiKey.length > 5) {
+      provider = 'google';
+    }
+  }
+
+  return {
+    provider,
+    apiKey,
+    baseUrl,
+    model,
+    googleApiKey,
+    googleModel,
+    forceDeterministicDocs,
+    forceLocalAnswers,
+  };
 }
 
 export function saveAISettings(settings: AISettings): void {
+  localStorage.setItem('pp_pedia_ai_provider', settings.provider);
   localStorage.setItem('pp_pedia_openai_key', settings.apiKey.trim());
   localStorage.setItem('pp_pedia_openai_base_url', settings.baseUrl.trim());
   localStorage.setItem('pp_pedia_openai_model', settings.model.trim());
+  localStorage.setItem('pp_pedia_google_key', (settings.googleApiKey || '').trim());
+  localStorage.setItem('pp_pedia_google_model', (settings.googleModel || '').trim());
   localStorage.setItem('pp_pedia_force_deterministic_docs', String(Boolean(settings.forceDeterministicDocs)));
   localStorage.setItem('pp_pedia_force_local_answers', String(Boolean(settings.forceLocalAnswers)));
+}
+
+export type ActiveAIProvider = 'openai' | 'google' | 'offline';
+
+/**
+ * Determines the active AI provider.
+ * When keys for both OpenAI and Google are present, the selected button (settings.provider)
+ * is considered the default model.
+ */
+export function getActiveAIProvider(settings: AISettings): ActiveAIProvider {
+  if (settings.forceLocalAnswers) {
+    return 'offline';
+  }
+
+  const hasOpenAI = Boolean(settings.apiKey && settings.apiKey.trim().length > 5);
+  const hasGoogle = Boolean(settings.googleApiKey && settings.googleApiKey.trim().length > 5);
+
+  // If both have keys, user's selected button is the default model
+  if (hasOpenAI && hasGoogle) {
+    return settings.provider;
+  }
+
+  // If only one provider has a key configured, use it
+  if (hasGoogle && !hasOpenAI) {
+    return 'google';
+  }
+
+  if (hasOpenAI && !hasGoogle) {
+    return 'openai';
+  }
+
+  return 'offline';
 }
 
 /**
@@ -107,6 +169,76 @@ async function callOpenAI(
   }
 
   throw lastError || new Error('Failed to generate content after retries');
+}
+
+/**
+ * Calls Google Gen AI SDK (Gemini) to generate documentation,
+ * with automatic retries and exponential backoff.
+ */
+async function callGemini(
+  systemPrompt: string,
+  userPrompt: string,
+  settings: AISettings,
+  retries = 2,
+  onTokenUsage?: (usage: TokenUsage) => void
+): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: settings.googleApiKey });
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: settings.googleModel || 'gemini-2.5-flash',
+        contents: [
+          { role: 'user', parts: [{ text: userPrompt }] },
+        ],
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 1,
+        },
+      });
+
+      const usageMetadata = response.usageMetadata;
+      if (usageMetadata) {
+        onTokenUsage?.({
+          promptTokens: usageMetadata.promptTokenCount ?? 0,
+          completionTokens: usageMetadata.candidatesTokenCount ?? 0,
+          totalTokens: usageMetadata.totalTokenCount ?? 0,
+          requests: 1,
+        });
+      }
+
+      return response.text || 'No content generated.';
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) {
+        const delay = (attempt + 1) * 1000 + Math.floor(Math.random() * 500);
+        console.warn(`[callGemini] Network/API error on attempt ${attempt + 1}. Retrying in ${delay}ms:`, err);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      } else {
+        throw lastError;
+      }
+    }
+  }
+
+  throw lastError || new Error('Failed to generate content from Gemini after retries');
+}
+
+/**
+ * Dispatches documentation generation to either Google Gemini or OpenAI based on settings.
+ */
+async function callDocAI(
+  systemPrompt: string,
+  userPrompt: string,
+  settings: AISettings,
+  retries = 2,
+  onTokenUsage?: (usage: TokenUsage) => void
+): Promise<string> {
+  const active = getActiveAIProvider(settings);
+  if (active === 'google') {
+    return callGemini(systemPrompt, userPrompt, settings, retries, onTokenUsage);
+  }
+  return callOpenAI(systemPrompt, userPrompt, settings, retries, onTokenUsage);
 }
 
 /**
@@ -1347,7 +1479,8 @@ export async function generateDocumentationSuite(
   options?: DocGeneratorOptions
 ): Promise<DocumentRecord[]> {
   const settings = getAISettings();
-  const hasApiKey = !settings.forceDeterministicDocs && Boolean(settings.apiKey && settings.apiKey.length > 5);
+  const activeProvider = getActiveAIProvider(settings);
+  const hasKey = !settings.forceDeterministicDocs && activeProvider !== 'offline';
   const concurrency = Math.max(1, options?.concurrency ?? 4);
 
   const accumulatedUsage: TokenUsage = {
@@ -1371,12 +1504,12 @@ export async function generateDocumentationSuite(
     label: 'Generating Architecture Overview...',
     fn: async (): Promise<DocumentRecord> => {
       let overviewContent: string;
-      if (hasApiKey) {
+      if (hasKey) {
         try {
           const { system, user } = buildOverviewPrompt(ast);
-          overviewContent = await callOpenAI(system, user, settings, 2, handleTokenUsage);
+          overviewContent = await callDocAI(system, user, settings, 2, handleTokenUsage);
         } catch (e) {
-          console.warn('OpenAI error, falling back to deterministic generator:', e);
+          console.warn('AI generation error, falling back to deterministic generator:', e);
           overviewContent = generateDeterministicOverview(ast);
         }
       } else {
@@ -1399,12 +1532,12 @@ export async function generateDocumentationSuite(
     label: 'Generating Dataverse Schema & ERD...',
     fn: async (): Promise<DocumentRecord> => {
       let dataverseContent: string;
-      if (hasApiKey && ast.entities.length > 0) {
+      if (hasKey && ast.entities.length > 0) {
         try {
           const { system, user } = buildDataversePrompt(ast.entities[0]);
-          dataverseContent = await callOpenAI(system, user, settings, 2, handleTokenUsage);
+          dataverseContent = await callDocAI(system, user, settings, 2, handleTokenUsage);
         } catch (e) {
-          console.warn('OpenAI error, falling back to deterministic generator:', e);
+          console.warn('AI generation error, falling back to deterministic generator:', e);
           dataverseContent = generateDeterministicDataverse(ast);
         }
       } else {
@@ -1430,12 +1563,12 @@ export async function generateDocumentationSuite(
       label: `Documenting Cloud Flow: ${flowTitle}...`,
       fn: async (): Promise<DocumentRecord> => {
         let flowContent: string;
-        if (hasApiKey) {
+        if (hasKey) {
           try {
             const { system, user } = buildFlowPrompt(flow);
-            flowContent = await callOpenAI(system, user, settings, 2, handleTokenUsage);
+            flowContent = await callDocAI(system, user, settings, 2, handleTokenUsage);
           } catch (e) {
-            console.warn(`OpenAI error for flow ${flowTitle}, falling back to deterministic generator:`, e);
+            console.warn(`AI generation error for flow ${flowTitle}, falling back to deterministic generator:`, e);
             flowContent = generateDeterministicFlow(flow);
           }
         } else {
@@ -1462,12 +1595,12 @@ export async function generateDocumentationSuite(
       label: `Documenting Canvas App: ${appTitle}...`,
       fn: async (): Promise<DocumentRecord> => {
         let appContent: string;
-        if (hasApiKey) {
+        if (hasKey) {
           try {
             const { system, user } = buildCanvasAppPrompt(app);
-            appContent = await callOpenAI(system, user, settings, 2, handleTokenUsage);
+            appContent = await callDocAI(system, user, settings, 2, handleTokenUsage);
           } catch (e) {
-            console.warn(`OpenAI error for app ${appTitle}, falling back to deterministic generator:`, e);
+            console.warn(`AI generation error for app ${appTitle}, falling back to deterministic generator:`, e);
             appContent = generateDeterministicCanvasApp(app);
           }
         } else {
@@ -1576,7 +1709,7 @@ export async function generateDocumentationSuite(
       completed,
       total,
       label,
-      hasApiKey && accumulatedUsage.totalTokens > 0 ? { ...accumulatedUsage } : undefined
+      hasKey && accumulatedUsage.totalTokens > 0 ? { ...accumulatedUsage } : undefined
     );
   });
 }

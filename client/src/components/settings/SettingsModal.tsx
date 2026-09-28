@@ -16,9 +16,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onDataCleared,
 }) => {
   const [settings, setSettings] = useState<AISettings>({
+    provider: 'openai',
     apiKey: '',
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-4o-mini',
+    googleApiKey: '',
+    googleModel: 'gemini-2.5-flash',
     forceDeterministicDocs: false,
     forceLocalAnswers: false,
   });
@@ -78,89 +81,202 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="py-5 space-y-5 overflow-y-auto flex-1 pr-1">
-          {/* OpenAI API Key */}
+          {/* Provider Selection */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
-              <span>OpenAI API Key (BYOK)</span>
-              <span className="text-[10px] text-slate-500 font-normal">Optional</span>
+            <label className="block text-xs font-semibold text-slate-300 mb-2">
+              Agentic AI Provider
             </label>
-            <input
-              type="password"
-              placeholder="sk-proj-..."
-              value={settings.apiKey}
-              onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
-              className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
-            />
-            <p className="text-[11px] text-slate-500 mt-1">
-              If left blank, pp-pedia runs in 100% offline mode with full deterministic documentation & local RAG.
-            </p>
-          </div>
-
-          {/* Base URL */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-              <Server className="w-3.5 h-3.5 text-indigo-400" />
-              <span>API Base URL</span>
-            </label>
-            <input
-              type="text"
-              placeholder="https://api.openai.com/v1"
-              value={settings.baseUrl}
-              onChange={(e) => setSettings({ ...settings, baseUrl: e.target.value })}
-              className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
-            />
-            <p className="text-[11px] text-slate-500 mt-1">
-              Use default for OpenAI, or configure for Azure OpenAI, Ollama, OpenRouter, or local proxies.
-            </p>
-          </div>
-
-          {/* Model Name */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <Cpu className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Model Name</span>
-              </span>
-              <span className="text-[10px] text-slate-500 font-normal">Free text / Custom</span>
-            </label>
-            <input
-              type="text"
-              list="model-suggestions"
-              placeholder="e.g. gpt-4o-mini, gpt-4o, llama3, deepseek-chat"
-              value={settings.model}
-              onChange={(e) => setSettings({ ...settings, model: e.target.value })}
-              className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
-            />
-            <datalist id="model-suggestions">
-              <option value="gpt-4o-mini" />
-              <option value="gpt-4o" />
-              <option value="gpt-4-turbo" />
-              <option value="gpt-3.5-turbo" />
-              <option value="llama3" />
-              <option value="llama3.1" />
-              <option value="mistral" />
-              <option value="deepseek-chat" />
-            </datalist>
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {['gpt-4o-mini', 'gpt-4o', 'llama3', 'deepseek-chat'].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => setSettings({ ...settings, model: preset })}
-                  className={`text-[10px] px-2 py-0.5 rounded-md font-mono border transition ${
-                    settings.model === preset
-                      ? 'bg-indigo-600/30 text-indigo-300 border-indigo-500/50'
-                      : 'bg-slate-800/60 text-slate-400 border-slate-750 hover:text-slate-200 hover:border-slate-600'
-                  }`}
-                >
-                  {preset}
-                </button>
-              ))}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSettings({ ...settings, provider: 'openai' })}
+                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition ${
+                  settings.provider === 'openai'
+                    ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-sm shadow-indigo-500/10'
+                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                }`}
+              >
+                <span className="font-semibold text-sm mb-0.5">OpenAI SDK</span>
+                <span className="text-[10px] text-slate-400">@openai/agents</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettings({ ...settings, provider: 'google' })}
+                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition ${
+                  settings.provider === 'google'
+                    ? 'bg-emerald-600/20 border-emerald-500 text-white shadow-sm shadow-emerald-500/10'
+                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                }`}
+              >
+                <span className="font-semibold text-sm mb-0.5">Google Agents SDK</span>
+                <span className="text-[10px] text-slate-400">Gemini / @google/genai</span>
+              </button>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">
-              Enter any standard model ID or custom deployment name supported by your API endpoint.
+            <p className="text-[11px] text-slate-500 mt-2">
+              The selected provider is used by default when API keys for both providers are present.
             </p>
           </div>
+
+          {settings.provider === 'openai' ? (
+            <>
+              {/* OpenAI API Key */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>OpenAI API Key (BYOK)</span>
+                  <span className="text-[10px] text-slate-500 font-normal">Optional</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="sk-proj-..."
+                  value={settings.apiKey}
+                  onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  If left blank, pp-pedia runs in 100% offline mode with full deterministic documentation & local RAG.
+                </p>
+              </div>
+
+              {/* Base URL */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+                  <Server className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>API Base URL</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://api.openai.com/v1"
+                  value={settings.baseUrl}
+                  onChange={(e) => setSettings({ ...settings, baseUrl: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Use default for OpenAI, or configure for Azure OpenAI, Ollama, OpenRouter, or local proxies.
+                </p>
+              </div>
+
+              {/* Model Name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Model Name</span>
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-normal">Free text / Custom</span>
+                </label>
+                <input
+                  type="text"
+                  list="model-suggestions"
+                  placeholder="e.g. gpt-4o-mini, gpt-4o, llama3, deepseek-chat"
+                  value={settings.model}
+                  onChange={(e) => setSettings({ ...settings, model: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
+                />
+                <datalist id="model-suggestions">
+                  <option value="gpt-4o-mini" />
+                  <option value="gpt-4o" />
+                  <option value="gpt-4-turbo" />
+                  <option value="gpt-3.5-turbo" />
+                  <option value="llama3" />
+                  <option value="llama3.1" />
+                  <option value="mistral" />
+                  <option value="deepseek-chat" />
+                </datalist>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {['gpt-4o-mini', 'gpt-4o', 'llama3', 'deepseek-chat'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setSettings({ ...settings, model: preset })}
+                      className={`text-[10px] px-2 py-0.5 rounded-md font-mono border transition ${
+                        settings.model === preset
+                          ? 'bg-indigo-600/30 text-indigo-300 border-indigo-500/50'
+                          : 'bg-slate-800/60 text-slate-400 border-slate-750 hover:text-slate-200 hover:border-slate-600'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Enter any standard model ID or custom deployment name supported by your API endpoint.
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Google Gemini API Key */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Google Gemini API Key (BYOK)</span>
+                  <a
+                    href="https://aistudio.google.com/app/api-keys"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1"
+                  >
+                    <span>Get key</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </label>
+                <input
+                  type="password"
+                  placeholder="AIzaSy..."
+                  value={settings.googleApiKey}
+                  onChange={(e) => setSettings({ ...settings, googleApiKey: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition font-mono"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Obtain a Gemini API key free from Google AI Studio. If blank, pp-pedia runs offline.
+                </p>
+              </div>
+
+              {/* Gemini Model Name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Gemini Model Name</span>
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-normal">Free text / Custom</span>
+                </label>
+                <input
+                  type="text"
+                  list="gemini-model-suggestions"
+                  placeholder="e.g. gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash"
+                  value={settings.googleModel}
+                  onChange={(e) => setSettings({ ...settings, googleModel: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition font-mono"
+                />
+                <datalist id="gemini-model-suggestions">
+                  <option value="gemini-2.5-flash" />
+                  <option value="gemini-2.5-pro" />
+                  <option value="gemini-2.0-flash" />
+                  <option value="gemini-1.5-pro" />
+                  <option value="gemini-1.5-flash" />
+                </datalist>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro'].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setSettings({ ...settings, googleModel: preset })}
+                      className={`text-[10px] px-2 py-0.5 rounded-md font-mono border transition ${
+                        settings.googleModel === preset
+                          ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50'
+                          : 'bg-slate-800/60 text-slate-400 border-slate-750 hover:text-slate-200 hover:border-slate-600'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Select recommended Gemini 2.5 Flash for high performance, or Gemini 2.5 Pro for deep reasoning.
+                </p>
+              </div>
+            </>
+          )}
 
           {/* Execution Overrides */}
           <div className="pt-4 border-t border-slate-800 space-y-3">

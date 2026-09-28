@@ -47,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="text-sm font-bold tracking-tight text-white flex items-center gap-1.5">
               pp-pedia
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
-                v1.0
+                v0.1
               </span>
             </div>
             <div className="text-[10px] text-slate-400">
