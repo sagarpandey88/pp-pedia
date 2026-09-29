@@ -22,6 +22,7 @@ export interface AISettings {
   localGemmaModel?: string;
   forceDeterministicDocs?: boolean;
   forceLocalAnswers?: boolean;
+  enableVerboseLogging?: boolean;
 }
 
 export function getAISettings(): AISettings {
@@ -34,6 +35,7 @@ export function getAISettings(): AISettings {
   const localGemmaModel = localStorage.getItem('pp_pedia_local_gemma_model') || 'gemma-2-2b-it-q4f32_1-MLC';
   const forceDeterministicDocs = localStorage.getItem('pp_pedia_force_deterministic_docs') === 'true';
   const forceLocalAnswers = localStorage.getItem('pp_pedia_force_local_answers') === 'true';
+  const enableVerboseLogging = localStorage.getItem('pp_pedia_enable_verbose_logging') === 'true';
 
   let provider = storedProvider;
   if (!localStorage.getItem('pp_pedia_ai_provider')) {
@@ -54,6 +56,7 @@ export function getAISettings(): AISettings {
     localGemmaModel,
     forceDeterministicDocs,
     forceLocalAnswers,
+    enableVerboseLogging,
   };
 }
 
@@ -67,6 +70,7 @@ export function saveAISettings(settings: AISettings): void {
   localStorage.setItem('pp_pedia_local_gemma_model', (settings.localGemmaModel || 'gemma-2-2b-it-q4f32_1-MLC').trim());
   localStorage.setItem('pp_pedia_force_deterministic_docs', String(Boolean(settings.forceDeterministicDocs)));
   localStorage.setItem('pp_pedia_force_local_answers', String(Boolean(settings.forceLocalAnswers)));
+  localStorage.setItem('pp_pedia_enable_verbose_logging', String(Boolean(settings.enableVerboseLogging)));
 }
 
 export type ActiveAIProvider = 'openai' | 'google' | 'local_gemma' | 'offline';
@@ -122,6 +126,10 @@ export function getActiveAIInfo(settings: AISettings): ActiveAIInfo {
     let displayName = 'Gemma 2 2B';
     if (rawModel.includes('1.1') || rawModel.includes('gemma-2b-it')) {
       displayName = 'Gemma 1.1 2B';
+    } else if (rawModel.includes('Hermes-3')) {
+      displayName = 'Hermes 3 8B';
+    } else if (rawModel.includes('Hermes-2')) {
+      displayName = 'Hermes 2 Pro 8B';
     } else if (rawModel.includes('9b')) {
       displayName = 'Gemma 2 9B';
     }

@@ -18,6 +18,7 @@ import {
 } from '../db';
 import { SimilarityResult } from '../../types/db';
 import { AgentExecutionContext, AgentActivityStep } from './agentTypes';
+import { logger } from '../logger';
 
 function extractHeadingSection(markdown: string, headingQuery: string): string {
   const lines = markdown.split('\n');
@@ -78,14 +79,19 @@ function finishStep(
   stepId: string,
   startTime: number,
   outputSummary: string,
-  isError = false
+  isError = false,
+  outputDetails?: string
 ) {
+  const duration = Math.round(performance.now() - startTime);
   if (context) {
     const step = context.steps.find((s) => s.id === stepId);
     if (step) {
       step.status = isError ? 'failed' : 'completed';
       step.outputSummary = outputSummary;
-      step.durationMs = Math.round(performance.now() - startTime);
+      if (outputDetails !== undefined) {
+        step.outputDetails = outputDetails;
+      }
+      step.durationMs = duration;
       context.onActivity?.([...context.steps]);
     }
   }
@@ -1173,6 +1179,104 @@ export interface GoogleAgentToolSet {
   executorMap: Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>;
 }
 
+/**
+ * Normalizes tool arguments passed from various agent SDKs or prompt formats
+ * to match the exact schema expected by the underlying tool implementation.
+ */
+export function normalizeToolArgs(toolName: string, rawArgs: any): any {
+  if (!rawArgs || typeof rawArgs !== 'object') return rawArgs;
+  const args = { ...rawArgs };
+
+  if (toolName === 'analyze_column_impact' || toolName === 'analyze_validation_impact') {
+    if (!args.entity_name && args.table_name) {
+      args.entity_name = args.table_name;
+    }
+    if (!args.entity_name && args.table) {
+      args.entity_name = args.table;
+    }
+    if (!args.column_name && args.column) {
+      args.column_name = args.column;
+    }
+  }
+
+  if (toolName === 'query_flow_integrations') {
+    if (!args.connector_filter && args.connector_name) {
+      args.connector_filter = args.connector_name;
+    }
+    if (!args.connector_filter && args.connector_type) {
+      args.connector_filter = args.connector_type;
+    }
+    if (!args.connector_filter && args.connector) {
+      args.connector_filter = args.connector;
+    }
+  }
+
+  if (toolName === 'audit_web_resources') {
+    if (!args.audit_type && args.check_deprecated_only) {
+      args.audit_type = 'deprecated_xrm';
+    }
+  }
+
+  if (toolName === 'read_document_markdown') {
+    if (!args.slug_or_id && args.identifier) {
+      args.slug_or_id = args.identifier;
+    }
+    if (!args.slug_or_id && args.slug) {
+      args.slug_or_id = args.slug;
+    }
+    if (!args.slug_or_id && args.document_id) {
+      args.slug_or_id = args.document_id;
+    }
+    if (!args.section_heading && args.section) {
+      args.section_heading = args.section;
+    }
+  }
+
+  if (toolName === 'inspect_dataverse_entity') {
+    if (!args.entity_name && args.logical_name) {
+      args.entity_name = args.logical_name;
+    }
+    if (!args.entity_name && args.table_name) {
+      args.entity_name = args.table_name;
+    }
+    if (!args.entity_name && args.entity) {
+      args.entity_name = args.entity;
+    }
+  }
+
+  if (toolName === 'inspect_cloud_flow') {
+    if (!args.flow_name && args.flow_name_or_id) {
+      args.flow_name = args.flow_name_or_id;
+    }
+    if (!args.flow_name && args.name) {
+      args.flow_name = args.name;
+    }
+    if (!args.flow_name && args.flow) {
+      args.flow_name = args.flow;
+    }
+  }
+
+  if (toolName === 'inspect_canvas_app') {
+    if (!args.app_name && args.name) {
+      args.app_name = args.name;
+    }
+    if (!args.app_name && args.app) {
+      args.app_name = args.app;
+    }
+  }
+
+  if (toolName === 'semantic_search') {
+    if (!args.query && args.search_term) {
+      args.query = args.search_term;
+    }
+    if (!args.query && args.search_query) {
+      args.query = args.search_query;
+    }
+  }
+
+  return args;
+}
+
 export function getGoogleAgentTools(): GoogleAgentToolSet {
   const tools = getAllAgentTools();
   const executorMap = new Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>();
@@ -1180,8 +1284,19 @@ export function getGoogleAgentTools(): GoogleAgentToolSet {
   for (const t of tools) {
     const toolName = (t as any).name;
     executorMap.set(toolName, async (args, context) => {
-      const inputStr = typeof args === 'string' ? args : JSON.stringify(args ?? {});
-      return (t as any).invoke({ context }, inputStr);
+      const normalizedArgs = normalizeToolArgs(toolName, args);
+      const inputStr = typeof normalizedArgs === 'string' ? normalizedArgs : JSON.stringify(normalizedArgs ?? {});
+      const startTime = performance.now();
+      const result = await (t as any).invoke({ context }, inputStr);
+      const duration = Math.round(performance.now() - startTime);
+      if (context) {
+        const step = [...context.steps].reverse().find((s) => s.toolName === toolName);
+        if (step && !step.outputDetails) {
+          step.outputDetails = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+        }
+      }
+      logger.toolCall(toolName, normalizedArgs, result, duration);
+      return result;
     });
   }
 
@@ -1214,8 +1329,19 @@ export function getGemmaAgentTools(curatedOnly = true): GemmaAgentToolSet {
   for (const t of allTools) {
     const toolName = (t as any).name;
     executorMap.set(toolName, async (args, context) => {
-      const inputStr = typeof args === 'string' ? args : JSON.stringify(args ?? {});
-      return (t as any).invoke({ context }, inputStr);
+      const normalizedArgs = normalizeToolArgs(toolName, args);
+      const inputStr = typeof normalizedArgs === 'string' ? normalizedArgs : JSON.stringify(normalizedArgs ?? {});
+      const startTime = performance.now();
+      const result = await (t as any).invoke({ context }, inputStr);
+      const duration = Math.round(performance.now() - startTime);
+      if (context) {
+        const step = [...context.steps].reverse().find((s) => s.toolName === toolName);
+        if (step && !step.outputDetails) {
+          step.outputDetails = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+        }
+      }
+      logger.toolCall(toolName, normalizedArgs, result, duration);
+      return result;
     });
   }
 
@@ -1223,10 +1349,14 @@ export function getGemmaAgentTools(curatedOnly = true): GemmaAgentToolSet {
     'analyze_column_impact',
     'analyze_validation_impact',
     'query_flow_integrations',
-    'semantic_search',
+    'audit_web_resources',
+    'audit_hardcoded_literals',
     'inspect_dataverse_entity',
     'inspect_cloud_flow',
+    'inspect_canvas_app',
+    'semantic_search',
     'read_document_markdown',
+    'list_solutions',
   ]);
 
   const sourceDeclarations = curatedOnly

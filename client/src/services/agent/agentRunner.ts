@@ -7,6 +7,7 @@ import { SimilarityResult } from '../../types/db';
 import { TokenUsage } from '../../types/solution';
 import { embedQuery } from '../embeddingService';
 import { querySimilarChunks } from '../db';
+import { logger } from '../logger';
 
 export interface ChatHistoryItem {
   role: 'user' | 'assistant' | 'system';
@@ -167,10 +168,15 @@ Strategy:
       inputPrompt = `Previous Conversation Context:\n${historyStr}\n\nCurrent User Request:\n${query}`;
     }
 
+    logger.agentCycle('OpenAI Agent', 1, settings.model || 'gpt-4o-mini', inputPrompt);
+    const startTime = performance.now();
+
     const result = await run(agent, inputPrompt, {
       context,
       maxTurns: 10,
     });
+
+    const duration = Math.round(performance.now() - startTime);
 
     const answerContent =
       (typeof result.finalOutput === 'string' ? result.finalOutput : JSON.stringify(result.finalOutput)) ||
@@ -196,6 +202,14 @@ Strategy:
       }
     }
 
+    logger.llmResponse(
+      'OpenAI Agent',
+      1,
+      answerContent,
+      { promptTokens, completionTokens, totalTokens },
+      duration
+    );
+
     const usage: TokenUsage | undefined =
       totalTokens > 0
         ? {
@@ -205,6 +219,11 @@ Strategy:
             requests: Math.max(1, requests),
           }
         : undefined;
+
+    logger.info(
+      'OpenAI Agent',
+      `Run finished with ${context.steps.length} steps and ${context.citations.length} citations.`
+    );
 
     return {
       content: answerContent,

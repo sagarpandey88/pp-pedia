@@ -15,6 +15,7 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
+  Terminal,
 } from 'lucide-react';
 import { getAISettings, saveAISettings, AISettings } from '../../services/generator/docGenerator';
 import { getDatabaseStats, clearAllData } from '../../services/db';
@@ -92,7 +93,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleDeleteCache = async () => {
-    if (confirm('Delete cached Gemma model weights to free up browser storage?')) {
+    const modelObj =
+      GEMMA_MODELS.find((m) => m.id === (settings.localGemmaModel || DEFAULT_GEMMA_MODEL)) ||
+      GEMMA_MODELS[0];
+    const shortName = modelObj.name.split(' (')[0];
+    if (confirm(`Delete cached weights for ${shortName} to free up browser storage?`)) {
       await deleteGemmaCache(settings.localGemmaModel || DEFAULT_GEMMA_MODEL);
       setIsCached(false);
       setDownloadProgress(null);
@@ -122,6 +127,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       onDataCleared();
     }
   };
+
+  const selectedLocalModel =
+    GEMMA_MODELS.find((m) => m.id === (settings.localGemmaModel || DEFAULT_GEMMA_MODEL)) ||
+    GEMMA_MODELS[0];
+  const selectedModelShortName = selectedLocalModel.name.split(' (')[0];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
@@ -435,13 +445,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   ) : (
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                      Not Downloaded (~1.5 GB)
+                      Not Downloaded ({selectedLocalModel.size})
                     </span>
                   )}
                 </div>
 
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Gemma weights are cached in your browser's persistent CacheStorage. Once downloaded, inference runs entirely offline without contacting any external servers.
+                  Model weights are cached in your browser's persistent CacheStorage. Gemma 2B models run lightweight agentic reasoning via prompt-based tool calling, while 8B Hermes models support native WebLLM function calling. Once downloaded, inference runs entirely offline.
                 </p>
 
                 {downloadProgress && (
@@ -481,7 +491,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       ) : (
                         <>
                           <Download className="w-3.5 h-3.5" />
-                          <span>Download & Initialize Gemma 2B</span>
+                          <span>Download & Initialize {selectedModelShortName}</span>
                         </>
                       )}
                     </button>
@@ -492,7 +502,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-850 hover:bg-rose-950/40 text-rose-400 text-xs transition"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete Cached Model</span>
+                      <span>Delete Cached {selectedModelShortName}</span>
                     </button>
                   )}
                 </div>
@@ -541,6 +551,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
                   Synthesize chat answers strictly from local vector search chunks without sending queries to OpenAI or external models.
+                </div>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700/80 cursor-pointer transition select-none group">
+              <input
+                type="checkbox"
+                checked={Boolean(settings.enableVerboseLogging)}
+                onChange={(e) =>
+                  setSettings({ ...settings, enableVerboseLogging: e.target.checked })
+                }
+                className="mt-0.5 w-4 h-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 bg-slate-900 cursor-pointer"
+              />
+              <div className="text-xs">
+                <div className="font-medium text-slate-200 group-hover:text-indigo-300 transition flex items-center gap-1.5">
+                  <Terminal className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Enable verbose agent & LLM telemetry</span>
+                  <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-purple-950/80 border border-purple-800/60 text-purple-300">
+                    Console & UI
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                  Log full prompts, tool arguments, raw observations, token usage, and execution latency to the browser DevTools console and chat inspection trail for code optimization.
                 </div>
               </div>
             </label>

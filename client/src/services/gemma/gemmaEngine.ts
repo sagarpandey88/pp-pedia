@@ -4,9 +4,22 @@ import {
   hasModelInCache,
   deleteModelAllInfoInCache,
   InitProgressReport,
+  functionCallingModelIds,
 } from '@mlc-ai/web-llm';
 
 export const DEFAULT_GEMMA_MODEL = 'gemma-2-2b-it-q4f32_1-MLC';
+
+/**
+ * Checks whether a WebLLM model ID supports native function calling (ChatCompletionRequest.tools).
+ */
+export function isNativeFunctionCallingSupported(modelId: string): boolean {
+  try {
+    return Array.isArray(functionCallingModelIds) && functionCallingModelIds.includes(modelId);
+  } catch {
+    return false;
+  }
+}
+
 export const GEMMA_MODELS = [
   {
     id: 'gemma-2-2b-it-q4f32_1-MLC',
@@ -27,6 +40,20 @@ export const GEMMA_MODELS = [
     name: 'Gemma 1.1 2B Instruct',
     size: '~1.4 GB',
     vram: '1.7 GB',
+    recommended: false,
+  },
+  {
+    id: 'Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC',
+    name: 'Hermes 2 Pro Llama 3 8B (Native Tools)',
+    size: '~4.5 GB',
+    vram: '6.0 GB',
+    recommended: false,
+  },
+  {
+    id: 'Hermes-3-Llama-3.1-8B-q4f16_1-MLC',
+    name: 'Hermes 3 Llama 3.1 8B (Native Tools)',
+    size: '~4.5 GB',
+    vram: '6.0 GB',
     recommended: false,
   },
 ];
