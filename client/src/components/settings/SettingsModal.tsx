@@ -405,30 +405,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </p>
               </div>
 
-              {/* Model Selection */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
+              {/* Dedicated Model Card */}
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
                     <Cpu className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Local Gemma Model</span>
+                    <span>FunctionGemma 270M</span>
                   </span>
-                  <span className="text-[10px] text-purple-400 font-mono">WebLLM / Apache TVM</span>
-                </label>
-                <select
-                  value={settings.localGemmaModel || DEFAULT_GEMMA_MODEL}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSettings({ ...settings, localGemmaModel: val });
-                    refreshCacheStatus(val);
-                  }}
-                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-purple-500 transition"
-                >
-                  {GEMMA_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} ({m.size} • {m.vram} VRAM)
-                    </option>
-                  ))}
-                </select>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 font-mono">
+                    Fast Tool Calling (~145 MB)
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Ultra-lightweight SLM specialized in rapid function calling (&lt;80ms latency). Runs locally in WebGPU without transmitting data to external servers.
+                </p>
               </div>
 
               {/* Model Download & Cache Management */}
@@ -451,7 +441,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Model weights are cached in your browser's persistent CacheStorage. Gemma 2B models run lightweight agentic reasoning via prompt-based tool calling, while 8B Hermes models support native WebLLM function calling. Once downloaded, inference runs entirely offline.
+                  Model weights (~145 MB) are cached in your browser's persistent CacheStorage. If offline execution encounters an issue, pp-pedia strictly presents local semantic search findings without escalating to remote BYOK models.
                 </p>
 
                 {downloadProgress && (

@@ -4,59 +4,40 @@ import {
   hasModelInCache,
   deleteModelAllInfoInCache,
   InitProgressReport,
-  functionCallingModelIds,
+  AppConfig,
 } from '@mlc-ai/web-llm';
 
-export const DEFAULT_GEMMA_MODEL = 'gemma-2-2b-it-q4f32_1-MLC';
+export const DEFAULT_GEMMA_MODEL = 'functiongemma-270m-it';
 
 /**
  * Checks whether a WebLLM model ID supports native function calling (ChatCompletionRequest.tools).
  */
-export function isNativeFunctionCallingSupported(modelId: string): boolean {
-  try {
-    return Array.isArray(functionCallingModelIds) && functionCallingModelIds.includes(modelId);
-  } catch {
-    return false;
-  }
+export function isNativeFunctionCallingSupported(_modelId: string): boolean {
+  // FunctionGemma 270M uses specialized native tokens (<start_function_call>...) rather than OpenAI JSON grammar
+  return false;
 }
 
 export const GEMMA_MODELS = [
   {
-    id: 'gemma-2-2b-it-q4f32_1-MLC',
-    name: 'Gemma 2 2B Instruct (FP32/Universal)',
-    size: '~1.5 GB',
-    vram: '2.5 GB',
+    id: 'functiongemma-270m-it',
+    name: 'FunctionGemma 270M (Fast Tool Calling)',
+    size: '~145 MB',
+    vram: '~500 MB',
     recommended: true,
   },
-  {
-    id: 'gemma-2-2b-it-q4f16_1-MLC',
-    name: 'Gemma 2 2B Instruct (FP16/Fast)',
-    size: '~1.4 GB',
-    vram: '1.9 GB',
-    recommended: false,
-  },
-  {
-    id: 'gemma-2b-it-q4f32_1-MLC',
-    name: 'Gemma 1.1 2B Instruct',
-    size: '~1.4 GB',
-    vram: '1.7 GB',
-    recommended: false,
-  },
-  {
-    id: 'Hermes-2-Pro-Llama-3-8B-q4f16_1-MLC',
-    name: 'Hermes 2 Pro Llama 3 8B (Native Tools)',
-    size: '~4.5 GB',
-    vram: '6.0 GB',
-    recommended: false,
-  },
-  {
-    id: 'Hermes-3-Llama-3.1-8B-q4f16_1-MLC',
-    name: 'Hermes 3 Llama 3.1 8B (Native Tools)',
-    size: '~4.5 GB',
-    vram: '6.0 GB',
-    recommended: false,
-  },
 ];
+
+export const FUNCTIONGEMMA_APP_CONFIG: AppConfig = {
+  model_list: [
+    {
+      model: 'https://huggingface.co/conceptcodes/txpilot-functiongemma-270m-it-q4f32_1-mlc/resolve/main/mlc-q4f32_1/',
+      model_id: 'functiongemma-270m-it',
+      model_lib:
+        'https://huggingface.co/conceptcodes/txpilot-functiongemma-270m-it-q4f32_1-mlc/resolve/main/libs/functiongemma-270m-q4f32_1-webgpu.wasm',
+      vram_required_MB: 500,
+    },
+  ],
+};
 
 let engineInstance: WebWorkerMLCEngine | null = null;
 let currentWorker: Worker | null = null;
@@ -109,7 +90,7 @@ export async function checkWebGPUSupport(): Promise<WebGPUStatus> {
  */
 export async function isGemmaCached(modelId: string = DEFAULT_GEMMA_MODEL): Promise<boolean> {
   try {
-    return await hasModelInCache(modelId);
+    return await hasModelInCache(modelId, FUNCTIONGEMMA_APP_CONFIG);
   } catch (err) {
     console.warn('Error checking Gemma cache:', err);
     return false;
@@ -123,7 +104,7 @@ export async function deleteGemmaCache(modelId: string = DEFAULT_GEMMA_MODEL): P
   if (engineInstance) {
     await unloadGemmaEngine();
   }
-  await deleteModelAllInfoInCache(modelId);
+  await deleteModelAllInfoInCache(modelId, FUNCTIONGEMMA_APP_CONFIG);
 }
 
 /**
@@ -190,6 +171,7 @@ export async function getOrInitGemmaEngine(
             progress: Math.min(1, Math.max(0, report.progress || 0)),
           });
         },
+        appConfig: FUNCTIONGEMMA_APP_CONFIG,
       }
     );
 

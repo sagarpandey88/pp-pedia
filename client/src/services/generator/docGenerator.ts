@@ -32,7 +32,14 @@ export function getAISettings(): AISettings {
   const model = localStorage.getItem('pp_pedia_openai_model') || 'gpt-4o-mini';
   const googleApiKey = localStorage.getItem('pp_pedia_google_key') || '';
   const googleModel = localStorage.getItem('pp_pedia_google_model') || 'gemini-2.5-flash';
-  const localGemmaModel = localStorage.getItem('pp_pedia_local_gemma_model') || 'gemma-2-2b-it-q4f32_1-MLC';
+  const rawStoredLocalModel = localStorage.getItem('pp_pedia_local_gemma_model') || '';
+  const localGemmaModel =
+    !rawStoredLocalModel ||
+    rawStoredLocalModel.startsWith('gemma-2-') ||
+    rawStoredLocalModel.startsWith('gemma-2b') ||
+    rawStoredLocalModel.startsWith('Hermes-')
+      ? 'functiongemma-270m-it'
+      : rawStoredLocalModel;
   const forceDeterministicDocs = localStorage.getItem('pp_pedia_force_deterministic_docs') === 'true';
   const forceLocalAnswers = localStorage.getItem('pp_pedia_force_local_answers') === 'true';
   const enableVerboseLogging = localStorage.getItem('pp_pedia_enable_verbose_logging') === 'true';
@@ -67,7 +74,7 @@ export function saveAISettings(settings: AISettings): void {
   localStorage.setItem('pp_pedia_openai_model', settings.model.trim());
   localStorage.setItem('pp_pedia_google_key', (settings.googleApiKey || '').trim());
   localStorage.setItem('pp_pedia_google_model', (settings.googleModel || '').trim());
-  localStorage.setItem('pp_pedia_local_gemma_model', (settings.localGemmaModel || 'gemma-2-2b-it-q4f32_1-MLC').trim());
+  localStorage.setItem('pp_pedia_local_gemma_model', (settings.localGemmaModel || 'functiongemma-270m-it').trim());
   localStorage.setItem('pp_pedia_force_deterministic_docs', String(Boolean(settings.forceDeterministicDocs)));
   localStorage.setItem('pp_pedia_force_local_answers', String(Boolean(settings.forceLocalAnswers)));
   localStorage.setItem('pp_pedia_enable_verbose_logging', String(Boolean(settings.enableVerboseLogging)));
@@ -122,21 +129,11 @@ export interface ActiveAIInfo {
 export function getActiveAIInfo(settings: AISettings): ActiveAIInfo {
   const provider = getActiveAIProvider(settings);
   if (provider === 'local_gemma') {
-    const rawModel = settings.localGemmaModel || 'gemma-2-2b-it-q4f32_1-MLC';
-    let displayName = 'Gemma 2 2B';
-    if (rawModel.includes('1.1') || rawModel.includes('gemma-2b-it')) {
-      displayName = 'Gemma 1.1 2B';
-    } else if (rawModel.includes('Hermes-3')) {
-      displayName = 'Hermes 3 8B';
-    } else if (rawModel.includes('Hermes-2')) {
-      displayName = 'Hermes 2 Pro 8B';
-    } else if (rawModel.includes('9b')) {
-      displayName = 'Gemma 2 9B';
-    }
+    const rawModel = settings.localGemmaModel || 'functiongemma-270m-it';
     return {
       provider,
-      label: displayName,
-      subLabel: 'WebGPU',
+      label: 'FunctionGemma 270M',
+      subLabel: 'WebGPU (Fast)',
       model: rawModel,
       badgeStyle: 'bg-purple-500/15 text-purple-300 border-purple-500/30 hover:border-purple-500/60',
       hasKey: true,

@@ -310,7 +310,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
 
   const providerBadge =
     activeProvider === 'local_gemma'
-      ? { text: `Local Gemma 2B • WebGPU Agent`, style: 'bg-purple-500/15 text-purple-300 border-purple-500/30' }
+      ? { text: `FunctionGemma 270M • WebGPU Agent`, style: 'bg-purple-500/15 text-purple-300 border-purple-500/30' }
       : activeProvider === 'google'
       ? { text: `Google Agents SDK • ${aiSettings.googleModel || 'Gemini'}`, style: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
       : activeProvider === 'openai'
@@ -592,7 +592,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
               <span>
-                Local Gemma 2B is active. The ~1.5 GB model will be cached in your browser on your first query, or you can pre-download it in Settings.
+                FunctionGemma 270M is active. The ultra-lightweight ~160 MB model will be cached in your browser on your first query, or you can pre-download it in Settings.
               </span>
             </div>
           </div>

@@ -4,41 +4,14 @@ import { AgentAnswer, AgentExecutionContext, AgentActivityStep } from './agentTy
 import { ChatHistoryItem } from './agentRunner';
 import { getAISettings } from '../generator/docGenerator';
 import { logger } from '../logger';
+import { embedQuery } from '../embeddingService';
+import { querySimilarChunks } from '../db';
 
 /**
- * Standard system instruction for models with native function calling support (e.g. Hermes 2/3).
+ * Generates the official FunctionGemma prompt format using native function calling control tokens:
+ * <start_function_declaration>declaration:name{description:<escape>...<escape>, parameters:{...}}<end_function_declaration>
  */
-const NATIVE_AGENT_SYSTEM_INSTRUCTION = `You are pp-pedia Agent, an autonomous Microsoft Power Platform expert and solution documentation specialist running locally in the browser via WebGPU.
-You analyze Dataverse tables, Power Automate Cloud Flows, Canvas Apps, Environment Variables, JavaScript Web Resources, and solution architectures.
-
-You have access to specialized tools to inspect the solution directly in local IndexedDB:
-- analyze_column_impact: High-precision blast radius analysis for deleting or modifying a Dataverse column/attribute. Queries relational dependencies across Cloud Flows, Canvas Apps, JavaScript Web Resources, Form Event Handlers, and Foreign Keys.
-- analyze_validation_impact: Evaluates impact of adding a validation or making a field required on a Dataverse table. Finds which Cloud Flows or Canvas Apps write to the table without setting that column.
-- query_flow_integrations: Finds Cloud Flows using specific connectors or external APIs (e.g. "Power BI", "Dataverse", "Teams", "SQL", "HTTP") and filters by premium licensing.
-- audit_web_resources: Audits client-side JavaScript Web Resources for deprecated Xrm.Page APIs, direct DOM manipulation, and lists registered form event handlers.
-- audit_hardcoded_literals: Audits hardcoded GUIDs, URLs, and emails across flows, apps, and scripts for ALM portability.
-- inspect_dataverse_entity: Inspect table schemas, columns, types, and relationships directly from the solution AST.
-- inspect_cloud_flow: Inspect Cloud Flow triggers, actions, and run_after hierarchy directly from the AST.
-- inspect_canvas_app: Inspect Canvas App screens, controls, and formulas.
-- semantic_search: Hybrid vector + keyword search over documentation chunks in local PGlite.
-- read_document_markdown: Read full or sectional markdown files by slug or ID.
-- list_solutions: List solutions and statistics.
-
-Strategy:
-1. For blast radius, deleting or renaming a column: ALWAYS call analyze_column_impact first.
-2. For adding validations or making a field required: ALWAYS call analyze_validation_impact first.
-3. For questions about connectors or external services: ALWAYS call query_flow_integrations first.
-4. For client-side JavaScript or form events: Call audit_web_resources.
-5. For hardcoded GUIDs or ALM portability: Call audit_hardcoded_literals.
-6. For table schemas or relationships: Call inspect_dataverse_entity.
-7. For general architectural concepts or topics: Call semantic_search or read_document_markdown.
-8. When you have gathered sufficient tool observations, provide a comprehensive, well-structured final answer with Markdown tables, bold headers, and clear conclusions.`;
-
-/**
- * Generates an in-depth system instruction with tool declarations and schemas
- * for SLMs that do not support native WebLLM ChatCompletionRequest.tools (e.g. Google Gemma 2 2B).
- */
-function buildPromptToolInstruction(
+export function buildFunctionGemmaSystemPrompt(
   toolDeclarations: Array<{
     type: 'function';
     function: {
@@ -48,68 +21,69 @@ function buildPromptToolInstruction(
     };
   }>
 ): string {
-  const toolsFormatted = toolDeclarations
+  const formattedDecls = toolDeclarations
     .map((t) => {
       const f = t.function;
       const props = (f.parameters as any)?.properties || {};
-      const required = new Set((f.parameters as any)?.required || []);
-      const paramList = Object.entries(props)
+      const required = (f.parameters as any)?.required || [];
+
+      const propEntries = Object.entries(props)
         .map(([k, v]: [string, any]) => {
-          const reqStr = required.has(k) ? ' (required)' : ' (optional)';
-          return `    "${k}": <${v.type || 'string'}>${reqStr} - ${v.description || ''}`;
+          const isReq = required.includes(k);
+          return `      ${k}:{\n        type:<escape>${v.type || 'STRING'}<escape>,\n        description:<escape>${v.description || ''}${isReq ? ' (REQUIRED)' : ''}<escape>\n      }`;
         })
-        .join('\n');
-      return `### Tool: \`${f.name}\`\n${f.description}\nParameters schema:\n{\n${paramList}\n}`;
+        .join(',\n');
+
+      const reqList = required.map((r: string) => `<escape>${r}<escape>`).join(', ');
+
+      return `<start_function_declaration>declaration:${f.name}{\n  description:<escape>${f.description}<escape>,\n  parameters:{\n    type:<escape>OBJECT<escape>,\n    properties:{\n${propEntries}\n    },\n    required:[${reqList}]\n  }\n}<end_function_declaration>`;
     })
-    .join('\n\n');
+    .join('\n');
 
-  return `You are pp-pedia Agent, an autonomous Microsoft Power Platform expert and solution documentation specialist running locally in the browser via WebGPU.
-You analyze Dataverse tables, Power Automate Cloud Flows, Canvas Apps, Environment Variables, JavaScript Web Resources, and solution architectures.
-
-You have access to specialized tools to inspect the solution directly in local IndexedDB:
-
-${toolsFormatted}
-
-### STRATEGY FOR ANSWERING:
-1. For blast radius, deleting or renaming a column: ALWAYS call \`analyze_column_impact\` first.
-2. For adding validations, making a field required, or column constraints: ALWAYS call \`analyze_validation_impact\` first.
-3. For questions about connectors or external services: ALWAYS call \`query_flow_integrations\` first.
-4. For client-side JavaScript, forms, or deprecated APIs: Call \`audit_web_resources\`.
-5. For hardcoded GUIDs, URLs, or ALM environment drift: Call \`audit_hardcoded_literals\`.
-6. For table schemas or relationships: Call \`inspect_dataverse_entity\`.
-7. For cloud flow triggers or action steps: Call \`inspect_cloud_flow\`.
-8. For Canvas App screens or formulas: Call \`inspect_canvas_app\`.
-9. For general architectural concepts, topics, or explanations: Call \`semantic_search\` or \`read_document_markdown\`.
-
-### HOW TO CALL A TOOL:
-If you need to query information to answer the user's question, output ONLY a JSON code block in this exact format:
-\`\`\`json
-{
-  "tool": "tool_name",
-  "parameters": {
-    "param_name": "value"
-  }
-}
-\`\`\`
-Do NOT output conversational text before or after the JSON code block when calling a tool.
-
-### HOW TO GIVE YOUR FINAL ANSWER:
-When you have collected sufficient information from the tools, or if no tools are needed, write your comprehensive final answer directly in GitHub Flavored Markdown (with tables, bold headers, and citations). Do NOT output a tool code block when giving your final answer.`;
+  return `You are a model that can do function calling with the following functions.\n${formattedDecls}\n\nWhen a user query requires querying data (e.g. how many flows use a connector, blast radius of a column, or inspecting tables), invoke the appropriate function call using <start_function_call>call:function_name{param:<escape>value<escape>}<end_function_call>. Do NOT invent tools.`;
 }
 
 /**
- * Parses potential text-encoded tool calls if the model emits markdown JSON code blocks or raw JSON instead of native tool_calls.
+ * Parses FunctionGemma control tokens:
+ * <start_function_call>call:tool_name{param:<escape>value<escape>}<end_function_call>
+ * with resilient fallback to markdown JSON blocks or ReAct style.
  */
-function extractFallbackToolCalls(
+export function parseFunctionGemmaCalls(
   text: string,
   availableToolNames: Set<string>
 ): Array<{ name: string; args: Record<string, unknown> }> {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
   if (!text) return calls;
 
-  // 1. Check for markdown code blocks (```json ... ``` or ```tool_call ... ``` or just ``` ... ```)
-  const codeBlockRegex = /```(?:json|tool_call)?\s*([\s\S]*?)\s*```/g;
+  // 1. Check for native FunctionGemma tokens: call:tool_name{...}
+  const tokenRegex = /(?:<start_function_call>)?call:([a-zA-Z0-9_-]+)\s*\{([\s\S]*?)\}(?:<end_function_call>)?/g;
   let match;
+  while ((match = tokenRegex.exec(text)) !== null) {
+    const toolName = match[1].trim();
+    if (availableToolNames.has(toolName)) {
+      const rawParams = match[2];
+      const args: Record<string, unknown> = {};
+
+      const paramRegex = /([a-zA-Z0-9_-]+)\s*:\s*(?:<escape>([\s\S]*?)<escape>|"([^"]*)"|'([^']*)'|([a-zA-Z0-9_\.-]+))/g;
+      let pMatch;
+      while ((pMatch = paramRegex.exec(rawParams)) !== null) {
+        const key = pMatch[1];
+        const val = pMatch[2] ?? pMatch[3] ?? pMatch[4] ?? pMatch[5];
+        if (val !== undefined) {
+          if (val === 'true') args[key] = true;
+          else if (val === 'false') args[key] = false;
+          else if (!isNaN(Number(val)) && val.trim() !== '') args[key] = Number(val);
+          else args[key] = val;
+        }
+      }
+      calls.push({ name: toolName, args });
+    }
+  }
+
+  if (calls.length > 0) return calls;
+
+  // 2. Check for markdown code blocks (```json ... ``` or ```tool_call ... ``` or just ``` ... ```)
+  const codeBlockRegex = /```(?:json|tool_call)?\s*([\s\S]*?)\s*```/g;
   while ((match = codeBlockRegex.exec(text)) !== null) {
     const candidate = match[1].trim();
     const parsed = tryParseToolCallJson(candidate, availableToolNames);
@@ -120,7 +94,7 @@ function extractFallbackToolCalls(
 
   if (calls.length > 0) return calls;
 
-  // 2. Check for raw JSON object in text
+  // 3. Check for raw JSON object in text
   const jsonObjectRegex = /\{[\s\S]*?\}/g;
   while ((match = jsonObjectRegex.exec(text)) !== null) {
     const candidate = match[0].trim();
@@ -132,7 +106,7 @@ function extractFallbackToolCalls(
 
   if (calls.length > 0) return calls;
 
-  // 3. Check for ReAct style Action: ... Action Input: ...
+  // 4. Check for ReAct style Action: ... Action Input: ...
   const reactMatch = /Action:\s*([a-zA-Z0-9_-]+)\s*(?:Action\s*Input:\s*([\s\S]*))?/i.exec(text);
   if (reactMatch) {
     const toolName = reactMatch[1].trim();
@@ -181,12 +155,20 @@ function tryParseToolCallJson(
 }
 
 /**
- * Strips tool call code blocks from final answer if present.
+ * Strips tool call tokens, code blocks, and control characters from final answer.
  */
 function cleanFinalAnswer(text: string): string {
   if (!text) return '';
+  // Remove FunctionGemma control tokens
+  let cleaned = text
+    .replace(/<start_function_call>[\s\S]*?<end_function_call>/g, '')
+    .replace(/<start_function_response>[\s\S]*?<end_function_response>/g, '')
+    .replace(/<start_of_turn>(?:model|developer|user|tool)?/g, '')
+    .replace(/<end_of_turn>/g, '')
+    .replace(/<escape>/g, '')
+    .trim();
   // Remove markdown tool call blocks like ```json\n{\n  "tool": "..."\n}\n```
-  let cleaned = text.replace(/```(?:json|tool_call)?\s*\{\s*(?:"tool"|"name"|"action")[\s\S]*?\}\s*```/g, '').trim();
+  cleaned = cleaned.replace(/```(?:json|tool_call)?\s*\{\s*(?:"tool"|"name"|"action")[\s\S]*?\}\s*```/g, '').trim();
   // Remove standalone JSON tool calls
   cleaned = cleaned.replace(/^\s*\{\s*(?:"tool"|"name"|"action")[\s\S]*?\}\s*$/gm, '').trim();
   return cleaned || text;
@@ -216,7 +198,7 @@ export async function runLocalGemmaAgent(
   };
 
   const initStepId = `step_gemma_init_${Date.now()}`;
-  const modelShortName = modelId.startsWith('gemma') ? 'Gemma SLM' : 'Local SLM';
+  const modelShortName = 'FunctionGemma 270M';
   const initStep: AgentActivityStep = {
     id: initStepId,
     toolName: 'gemma_engine',
@@ -245,9 +227,7 @@ export async function runLocalGemmaAgent(
   const { tools, executorMap } = getGemmaAgentTools(true);
   const availableToolNames = new Set(tools.map((t) => t.function.name));
 
-  const systemInstruction = supportsNativeTools
-    ? NATIVE_AGENT_SYSTEM_INSTRUCTION
-    : buildPromptToolInstruction(tools);
+  const systemInstruction = buildFunctionGemmaSystemPrompt(tools);
 
   // Build message history
   const messages: any[] = [
@@ -297,11 +277,11 @@ export async function runLocalGemmaAgent(
         requestPayload.tools &&
         (err?.name === 'UnsupportedModelIdError' || errMsg.includes('tools') || errMsg.includes('UnsupportedModelIdError'))
       ) {
-        console.warn('Native tools rejected by WebLLM, switching to prompt-based tool execution:', err);
+        console.warn('Native tools rejected by WebLLM, switching to FunctionGemma token prompt:', err);
         supportsNativeTools = false;
         delete requestPayload.tools;
         delete requestPayload.tool_choice;
-        messages[0] = { role: 'system', content: buildPromptToolInstruction(tools) };
+        messages[0] = { role: 'system', content: buildFunctionGemmaSystemPrompt(tools) };
         response = await engine.chat.completions.create(requestPayload);
       } else {
         throw err;
@@ -314,10 +294,10 @@ export async function runLocalGemmaAgent(
     const toolCalls = message.tool_calls;
     const rawContent = message.content || '';
 
-    // Check for native tool calls or fallback text tool calls
+    // Check for native tool calls or FunctionGemma token calls
     const fallbackCalls =
       !toolCalls || toolCalls.length === 0
-        ? extractFallbackToolCalls(rawContent, availableToolNames)
+        ? parseFunctionGemmaCalls(rawContent, availableToolNames)
         : [];
 
     logger.llmResponse(
@@ -373,7 +353,7 @@ export async function runLocalGemmaAgent(
         });
       }
     } else if (fallbackCalls.length > 0) {
-      // Process fallback text tool calls (Gemma)
+      // Process FunctionGemma token tool calls
       messages.push({ role: 'assistant', content: rawContent });
 
       for (const call of fallbackCalls) {
@@ -394,12 +374,12 @@ export async function runLocalGemmaAgent(
 
         const isApproachingMax = turn >= maxTurns - 1;
         const guidance = isApproachingMax
-          ? `You have reached the limit of tool queries. Based on all gathered observations, provide your comprehensive, final technical answer now using Markdown tables and bold headers. Do NOT call any more tools.`
-          : `Review the observation above. If you have enough information, synthesize your comprehensive final answer in Markdown. If you need more details, you may call another tool.`;
+          ? `You have reached the limit of tool queries. Based on all gathered observations, provide your final technical answer now. Do NOT call any more tools.`
+          : `Review the observation above. If you have enough information, synthesize your final answer. If you need more details, you may call another tool.`;
 
         messages.push({
           role: 'user',
-          content: `[Observation from tool "${toolName}"]:\n${toolOutput}\n\n${guidance}`,
+          content: `<start_function_response>response:${toolOutput}<end_function_response>\n${guidance}`,
         });
       }
     }
@@ -411,31 +391,55 @@ export async function runLocalGemmaAgent(
     if (lastMsg?.role === 'assistant') {
       messages.push({
         role: 'user',
-        content: 'Please summarize all gathered findings and provide your comprehensive final answer now in Markdown.',
+        content: 'Please summarize all gathered findings and provide your final answer now in Markdown.',
       });
     }
 
-    const stream = await engine.chat.completions.create({
-      messages,
-      temperature: 0.2,
-      stream: true,
-    });
+    try {
+      const stream = await engine.chat.completions.create({
+        messages,
+        temperature: 0.2,
+        stream: true,
+      });
 
-    let fullText = '';
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content || '';
-      fullText += delta;
-      onToken?.(delta);
+      let fullText = '';
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || '';
+        fullText += delta;
+        onToken?.(delta);
+      }
+      finalAnswer = cleanFinalAnswer(fullText);
+    } catch {
+      // Ignore stream synthesis error and proceed to semantic fallback
     }
-    finalAnswer = cleanFinalAnswer(fullText);
   } else if (onToken) {
     onToken(finalAnswer);
   }
 
-  // Fallback if final answer is somehow empty
-  if (!finalAnswer && context.citations.length > 0) {
-    const primary = context.citations[0];
-    finalAnswer = `Based on the retrieved solution documentation for **${primary.project_name}**:\n\n### ${primary.title} (${primary.heading_context || 'Section'})\n${primary.chunk_content}`;
+  // Fallback: If final answer is somehow empty, directly show semantic outputs (NO BYOK)
+  if (!finalAnswer) {
+    if (context.citations.length > 0) {
+      const primary = context.citations[0];
+      finalAnswer = `Based on the retrieved solution documentation for **${primary.project_name}**:\n\n### ${primary.title} (${primary.heading_context || 'Section'})\n${primary.chunk_content}`;
+    } else {
+      try {
+        const queryVector = await embedQuery(query);
+        const results = await querySimilarChunks(queryVector, projectId, 6, query);
+        for (const item of results) {
+          if (!context.citations.some((c) => c.id === item.id)) {
+            context.citations.push(item);
+          }
+        }
+        if (results.length > 0) {
+          const primary = results[0];
+          finalAnswer = `Based on the local documentation for **${primary.project_name}**:\n\n### ${primary.title} (${primary.heading_context || 'Section'})\n${primary.chunk_content}`;
+        } else {
+          finalAnswer = `No specific matching components or documentation chunks found for "${query}".`;
+        }
+      } catch (err: any) {
+        finalAnswer = `Local processing completed. Direct semantic search result: ${err?.message || err}`;
+      }
+    }
   }
 
   logger.info(

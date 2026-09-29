@@ -256,16 +256,16 @@ export async function runAgenticAssistant(
   const settings = getAISettings();
   const activeProvider = getActiveAIProvider(settings);
 
-  // If active provider is Local Gemma SLM (WebGPU)
+  // If active provider is Local FunctionGemma (WebGPU)
   if (activeProvider === 'local_gemma') {
     try {
       return await runLocalGemmaAgent(query, projectId, conversationHistory, onActivity, onToken);
     } catch (err: any) {
-      console.warn('Local Gemma Agent execution error, falling back to local synthesis:', err);
+      console.warn('Local FunctionGemma Agent execution error. Strictly showing local semantic outputs (NO BYOK):', err);
       const fallback = await runOfflineFallback(query, projectId, onActivity);
       return {
         ...fallback,
-        content: `*(Local Gemma Notice: ${err?.message || err}. Showing standard local documentation results)*\n\n${fallback.content}`,
+        content: `*(Local FunctionGemma Notice: Direct tool execution was unavailable [${err?.message || err}]. Showing local semantic documentation results below — no remote cloud models were invoked)*\n\n${fallback.content}`,
       };
     }
   }
