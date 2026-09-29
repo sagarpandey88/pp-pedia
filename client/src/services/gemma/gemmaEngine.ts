@@ -4,10 +4,14 @@ import {
   hasModelInCache,
   deleteModelAllInfoInCache,
   InitProgressReport,
-  AppConfig,
 } from '@mlc-ai/web-llm';
+import {
+  DEFAULT_GEMMA_MODEL,
+  GEMMA_MODELS,
+  FUNCTIONGEMMA_APP_CONFIG,
+} from './gemmaConfig';
 
-export const DEFAULT_GEMMA_MODEL = 'functiongemma-270m-it';
+export { DEFAULT_GEMMA_MODEL, GEMMA_MODELS, FUNCTIONGEMMA_APP_CONFIG };
 
 /**
  * Checks whether a WebLLM model ID supports native function calling (ChatCompletionRequest.tools).
@@ -16,28 +20,6 @@ export function isNativeFunctionCallingSupported(_modelId: string): boolean {
   // FunctionGemma 270M uses specialized native tokens (<start_function_call>...) rather than OpenAI JSON grammar
   return false;
 }
-
-export const GEMMA_MODELS = [
-  {
-    id: 'functiongemma-270m-it',
-    name: 'FunctionGemma 270M (Fast Tool Calling)',
-    size: '~145 MB',
-    vram: '~500 MB',
-    recommended: true,
-  },
-];
-
-export const FUNCTIONGEMMA_APP_CONFIG: AppConfig = {
-  model_list: [
-    {
-      model: 'https://huggingface.co/conceptcodes/txpilot-functiongemma-270m-it-q4f32_1-mlc/resolve/main/mlc-q4f32_1/',
-      model_id: 'functiongemma-270m-it',
-      model_lib:
-        'https://huggingface.co/conceptcodes/txpilot-functiongemma-270m-it-q4f32_1-mlc/resolve/main/libs/functiongemma-270m-q4f32_1-webgpu.wasm',
-      vram_required_MB: 500,
-    },
-  ],
-};
 
 let engineInstance: WebWorkerMLCEngine | null = null;
 let currentWorker: Worker | null = null;
@@ -62,7 +44,8 @@ export async function checkWebGPUSupport(): Promise<WebGPUStatus> {
   if (!nav.gpu) {
     return {
       supported: false,
-      reason: 'WebGPU is not supported or not enabled in your browser. Use Google Chrome 113+, Microsoft Edge 113+, or enable WebGPU flags.',
+      reason:
+        'WebGPU is not enabled or supported in this browser. Please enable chrome://flags/#enable-unsafe-webgpu or use Chrome/Edge 113+.',
     };
   }
 
@@ -71,13 +54,27 @@ export async function checkWebGPUSupport(): Promise<WebGPUStatus> {
     if (!adapter) {
       return {
         supported: false,
-        reason: 'WebGPU adapter could not be initialized. Your GPU or graphics driver may not support WebGPU.',
+        reason: 'WebGPU adapter could not be initialized. Your graphics driver may not support WebGPU.',
       };
     }
-    const info = (adapter as any).info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : undefined);
-    const adapterName = info?.vendor || info?.architecture || 'WebGPU Graphics Adapter';
+
+    let adapterName = 'WebGPU Graphics Adapter';
+    try {
+      const info =
+        adapter.info ||
+        (typeof adapter.requestAdapterInfo === 'function'
+          ? await adapter.requestAdapterInfo().catch(() => null)
+          : undefined);
+      if (info?.vendor || info?.architecture) {
+        adapterName = [info.vendor, info.architecture].filter(Boolean).join(' ');
+      }
+    } catch {
+      // Ignore adapter info error, adapter itself is valid
+    }
+
     return { supported: true, adapterName };
   } catch (err: any) {
+    console.warn('[WebGPU Check] Error requesting adapter:', err);
     return {
       supported: false,
       reason: `WebGPU initialization error: ${err?.message || err}`,
@@ -92,7 +89,7 @@ export async function isGemmaCached(modelId: string = DEFAULT_GEMMA_MODEL): Prom
   try {
     return await hasModelInCache(modelId, FUNCTIONGEMMA_APP_CONFIG);
   } catch (err) {
-    console.warn('Error checking Gemma cache:', err);
+    console.warn('[FunctionGemma Engine] Error checking Gemma cache:', err);
     return false;
   }
 }
@@ -105,6 +102,26 @@ export async function deleteGemmaCache(modelId: string = DEFAULT_GEMMA_MODEL): P
     await unloadGemmaEngine();
   }
   await deleteModelAllInfoInCache(modelId, FUNCTIONGEMMA_APP_CONFIG);
+  await clearAllWebLLMCaches();
+}
+
+/**
+ * Force clear all webllm CacheStorage instances to remove corrupt partial downloads.
+ */
+export async function clearAllWebLLMCaches(): Promise<void> {
+  if (typeof caches !== 'undefined') {
+    try {
+      const keys = await caches.keys();
+      for (const key of keys) {
+        if (key.includes('webllm') || key.includes('tvmjs')) {
+          console.log('[FunctionGemma Engine] Deleting cache storage:', key);
+          await caches.delete(key);
+        }
+      }
+    } catch (err) {
+      console.warn('[FunctionGemma Engine] Error deleting caches:', err);
+    }
+  }
 }
 
 /**
@@ -149,6 +166,7 @@ export async function getOrInitGemmaEngine(
   }
 
   loadPromise = (async () => {
+    console.log('[FunctionGemma Engine] Spawning worker for model:', modelId);
     if (currentWorker) {
       currentWorker.terminate();
       currentWorker = null;
@@ -159,13 +177,19 @@ export async function getOrInitGemmaEngine(
       { type: 'module' }
     );
 
+    currentWorker.onerror = (e) => {
+      console.error('[FunctionGemma Engine] Dedicated worker encountered error:', e.message, e);
+    };
+
     activeModelId = modelId;
 
+    console.log('[FunctionGemma Engine] Creating WebWorkerMLCEngine with config:', FUNCTIONGEMMA_APP_CONFIG);
     const engine = await CreateWebWorkerMLCEngine(
       currentWorker,
       modelId,
       {
         initProgressCallback: (report: InitProgressReport) => {
+          console.log('[FunctionGemma Engine] Init progress:', report.text, report.progress);
           onProgress?.({
             text: report.text,
             progress: Math.min(1, Math.max(0, report.progress || 0)),
@@ -175,6 +199,7 @@ export async function getOrInitGemmaEngine(
       }
     );
 
+    console.log('[FunctionGemma Engine] WebWorkerMLCEngine created successfully!');
     engineInstance = engine;
     return engine;
   })();
@@ -182,6 +207,7 @@ export async function getOrInitGemmaEngine(
   try {
     return await loadPromise;
   } catch (err) {
+    console.error('[FunctionGemma Engine] Engine initialization failed:', err);
     loadPromise = null;
     engineInstance = null;
     if (currentWorker) {

@@ -80,13 +80,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleDownloadModel = async () => {
     setIsDownloading(true);
     setDownloadError(null);
+    console.log('[SettingsModal] Initiating model download for:', settings.localGemmaModel || DEFAULT_GEMMA_MODEL);
     try {
       await getOrInitGemmaEngine(settings.localGemmaModel || DEFAULT_GEMMA_MODEL, (report) => {
+        console.log('[SettingsModal] Download progress:', report.text, `${Math.round(report.progress * 100)}%`);
         setDownloadProgress(report);
       });
       setIsCached(true);
+      console.log('[SettingsModal] Model successfully cached and engine ready!');
     } catch (err: any) {
-      setDownloadError(err?.message || 'Failed to download Gemma model');
+      const msg = err?.message || String(err) || 'Failed to download Gemma model';
+      console.error('[SettingsModal] Download model failed:', err);
+      setDownloadError(msg);
     } finally {
       setIsDownloading(false);
     }
@@ -460,16 +465,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
 
                 {downloadError && (
-                  <p className="text-[11px] text-rose-400 bg-rose-950/30 p-2 rounded-lg border border-rose-800/40">
-                    {downloadError}
-                  </p>
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] text-rose-400 bg-rose-950/30 p-2 rounded-lg border border-rose-800/40">
+                      {downloadError}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleDeleteCache}
+                      className="text-[10px] text-purple-400 hover:text-purple-300 underline block"
+                    >
+                      Clear cached data & retry
+                    </button>
+                  </div>
                 )}
 
                 <div className="flex items-center gap-2 pt-1">
                   {!isCached ? (
                     <button
                       type="button"
-                      disabled={isDownloading || !gpuStatus?.supported}
+                      disabled={isDownloading}
                       onClick={handleDownloadModel}
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium text-xs transition shadow-sm shadow-purple-600/20"
                     >
