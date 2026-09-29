@@ -1,3 +1,4 @@
+import './wasmPolyfill';
 import {
   CreateWebWorkerMLCEngine,
   WebWorkerMLCEngine,

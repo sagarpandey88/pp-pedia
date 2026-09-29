@@ -1,9 +1,11 @@
+import '../services/gemma/wasmPolyfill';
+
 import { WebWorkerMLCEngineHandler } from '@mlc-ai/web-llm';
 import { FUNCTIONGEMMA_APP_CONFIG } from '../services/gemma/gemmaConfig';
 
-console.log('[FunctionGemma Worker] Initializing WebWorkerMLCEngineHandler...');
+console.log('[FunctionGemma Worker] Initializing WebWorkerMLCEngineHandler with patched WebAssembly...');
 
-// Hook up WebLLM's dedicated worker message handler with FunctionGemma AppConfig
+// Hook up WebLLM dedicated worker message handler with FunctionGemma AppConfig
 const handler = new WebWorkerMLCEngineHandler();
 try {
   handler.engine.setAppConfig(FUNCTIONGEMMA_APP_CONFIG);
