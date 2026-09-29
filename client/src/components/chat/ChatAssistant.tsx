@@ -25,6 +25,7 @@ import { TokenUsage } from '../../types/solution';
 import { askRAGAssistant, ChatMessage } from '../../services/rag/ragService';
 import { AgentActivityStep } from '../../services/agent/agentTypes';
 import { getAISettings, getActiveAIProvider } from '../../services/generator/docGenerator';
+import { isGemmaCached, DEFAULT_GEMMA_MODEL } from '../../services/gemma/gemmaEngine';
 import { CitationCard } from './CitationCard';
 import { AgentActivityTrail } from './AgentActivityTrail';
 import { MermaidDiagram } from '../reader/MermaidDiagram';
@@ -292,6 +293,8 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   const [inputQuery, setInputQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [liveSteps, setLiveSteps] = useState<AgentActivityStep[]>([]);
+  const [streamingAnswer, setStreamingAnswer] = useState('');
+  const [isGemmaReady, setIsGemmaReady] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -299,8 +302,16 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   const aiSettings = getAISettings();
   const activeProvider = getActiveAIProvider(aiSettings);
 
+  useEffect(() => {
+    if (activeProvider === 'local_gemma') {
+      isGemmaCached(aiSettings.localGemmaModel || DEFAULT_GEMMA_MODEL).then(setIsGemmaReady);
+    }
+  }, [activeProvider, aiSettings.localGemmaModel]);
+
   const providerBadge =
-    activeProvider === 'google'
+    activeProvider === 'local_gemma'
+      ? { text: `Local Gemma 2B • WebGPU Agent`, style: 'bg-purple-500/15 text-purple-300 border-purple-500/30' }
+      : activeProvider === 'google'
       ? { text: `Google Agents SDK • ${aiSettings.googleModel || 'Gemini'}`, style: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
       : activeProvider === 'openai'
       ? { text: `OpenAI Agent SDK • ${aiSettings.model || 'GPT'}`, style: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' }
@@ -312,7 +323,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading, liveSteps]);
+  }, [messages, isLoading, liveSteps, streamingAnswer]);
 
   const quickQuestions = React.useMemo(() => {
     const list: string[] = [];
@@ -335,6 +346,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
 
     setInputQuery('');
     setLiveSteps([]);
+    setStreamingAnswer('');
     const userMsg: ChatMessage = {
       id: `usr_${Date.now()}`,
       role: 'user',
@@ -351,7 +363,8 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
         activeProjectId,
         10,
         messages,
-        (steps) => setLiveSteps([...steps])
+        (steps) => setLiveSteps([...steps]),
+        (delta) => setStreamingAnswer((prev) => prev + delta)
       );
       const assistantMsg: ChatMessage = {
         id: `asst_${Date.now()}`,
@@ -363,6 +376,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
         usage: response.usage,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+      setStreamingAnswer('');
     } catch (err: any) {
       const errorMsg: ChatMessage = {
         id: `err_${Date.now()}`,
@@ -375,6 +389,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
     } finally {
       setIsLoading(false);
       setLiveSteps([]);
+      setStreamingAnswer('');
     }
   };
 
@@ -572,6 +587,17 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
 
       {/* Messages area */}
       <div className={`flex-1 overflow-y-auto ${isSidepanel ? 'p-3.5 space-y-4' : 'p-6 space-y-6'}`}>
+        {activeProvider === 'local_gemma' && !isGemmaReady && (
+          <div className="mb-4 p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-center justify-between text-xs text-purple-200">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
+              <span>
+                Local Gemma 2B is active. The ~1.5 GB model will be cached in your browser on your first query, or you can pre-download it in Settings.
+              </span>
+            </div>
+          </div>
+        )}
+
         {messages.length === 0 ? (
           <div className={`mx-auto text-center ${isSidepanel ? 'max-w-md py-6 px-2' : 'max-w-2xl py-12'}`}>
             <div
@@ -700,14 +726,19 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                   <Bot className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
                 </div>
                 <div className={`flex-1 min-w-0 ${isSidepanel ? 'max-w-full' : 'max-w-3xl'}`}>
-                  {liveSteps.length > 0 ? (
+                  {liveSteps.length > 0 && (
                     <AgentActivityTrail steps={liveSteps} isLive={true} />
-                  ) : (
+                  )}
+                  {streamingAnswer ? (
+                    <div className="mt-2.5 p-3.5 sm:p-4 rounded-2xl rounded-tl-none bg-slate-900/90 border border-slate-800 text-slate-200 shadow-sm">
+                      <ChatMessageContent content={streamingAnswer} role="assistant" />
+                    </div>
+                  ) : liveSteps.length === 0 ? (
                     <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none p-3.5 text-xs text-slate-400 flex items-center gap-2.5">
                       <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin flex-shrink-0" />
                       <span className="truncate">Agent reasoning & planning tool execution...</span>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
             )}

@@ -1,8 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { X, Key, Server, Cpu, Database, Trash2, Check, ExternalLink, Sliders } from 'lucide-react';
+import {
+  X,
+  Key,
+  Server,
+  Cpu,
+  Database,
+  Trash2,
+  Check,
+  ExternalLink,
+  Sliders,
+  Sparkles,
+  Download,
+  HardDrive,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+} from 'lucide-react';
 import { getAISettings, saveAISettings, AISettings } from '../../services/generator/docGenerator';
 import { getDatabaseStats, clearAllData } from '../../services/db';
 import { DatabaseStats } from '../../types/db';
+import {
+  checkWebGPUSupport,
+  isGemmaCached,
+  deleteGemmaCache,
+  getOrInitGemmaEngine,
+  GEMMA_MODELS,
+  DEFAULT_GEMMA_MODEL,
+  WebGPUStatus,
+} from '../../services/gemma/gemmaEngine';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,18 +47,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     model: 'gpt-4o-mini',
     googleApiKey: '',
     googleModel: 'gemini-2.5-flash',
+    localGemmaModel: DEFAULT_GEMMA_MODEL,
     forceDeterministicDocs: false,
     forceLocalAnswers: false,
   });
   const [saved, setSaved] = useState(false);
   const [dbStats, setDbStats] = useState<DatabaseStats | null>(null);
 
+  // Gemma state
+  const [gpuStatus, setGpuStatus] = useState<WebGPUStatus | null>(null);
+  const [isCached, setIsCached] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{ text: string; progress: number } | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
   useEffect(() => {
     if (isOpen) {
-      setSettings(getAISettings());
+      const s = getAISettings();
+      setSettings(s);
       getDatabaseStats().then(setDbStats).catch(console.error);
+      checkWebGPUSupport().then(setGpuStatus);
+      isGemmaCached(s.localGemmaModel || DEFAULT_GEMMA_MODEL).then(setIsCached);
     }
   }, [isOpen]);
+
+  const refreshCacheStatus = async (modelId: string) => {
+    const cached = await isGemmaCached(modelId);
+    setIsCached(cached);
+  };
+
+  const handleDownloadModel = async () => {
+    setIsDownloading(true);
+    setDownloadError(null);
+    try {
+      await getOrInitGemmaEngine(settings.localGemmaModel || DEFAULT_GEMMA_MODEL, (report) => {
+        setDownloadProgress(report);
+      });
+      setIsCached(true);
+    } catch (err: any) {
+      setDownloadError(err?.message || 'Failed to download Gemma model');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDeleteCache = async () => {
+    if (confirm('Delete cached Gemma model weights to free up browser storage?')) {
+      await deleteGemmaCache(settings.localGemmaModel || DEFAULT_GEMMA_MODEL);
+      setIsCached(false);
+      setDownloadProgress(null);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -86,38 +150,58 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <label className="block text-xs font-semibold text-slate-300 mb-2">
               Agentic AI Provider
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => setSettings({ ...settings, provider: 'openai' })}
-                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition ${
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition ${
                   settings.provider === 'openai'
                     ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-sm shadow-indigo-500/10'
                     : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                 }`}
               >
-                <span className="font-semibold text-sm mb-0.5">OpenAI SDK</span>
-                <span className="text-[10px] text-slate-400">@openai/agents</span>
+                <span className="font-semibold text-xs mb-0.5">OpenAI SDK</span>
+                <span className="text-[10px] text-slate-400">Cloud BYOK</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSettings({ ...settings, provider: 'google' })}
-                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition ${
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition ${
                   settings.provider === 'google'
                     ? 'bg-emerald-600/20 border-emerald-500 text-white shadow-sm shadow-emerald-500/10'
                     : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                 }`}
               >
-                <span className="font-semibold text-sm mb-0.5">Google Agents SDK</span>
-                <span className="text-[10px] text-slate-400">Gemini / @google/genai</span>
+                <span className="font-semibold text-xs mb-0.5">Google Gen AI</span>
+                <span className="text-[10px] text-slate-400">Gemini BYOK</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSettings({ ...settings, provider: 'local_gemma' });
+                  refreshCacheStatus(settings.localGemmaModel || DEFAULT_GEMMA_MODEL);
+                }}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition ${
+                  settings.provider === 'local_gemma'
+                    ? 'bg-purple-600/20 border-purple-500 text-white shadow-sm shadow-purple-500/10'
+                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                }`}
+              >
+                <span className="font-semibold text-xs mb-0.5 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-purple-400" />
+                  Local Gemma
+                </span>
+                <span className="text-[10px] text-purple-300/80">In-Browser WebGPU</span>
               </button>
             </div>
             <p className="text-[11px] text-slate-500 mt-2">
-              The selected provider is used by default when API keys for both providers are present.
+              {settings.provider === 'local_gemma'
+                ? 'Runs 100% in your browser using WebGPU. No API keys or internet connection required.'
+                : 'The selected provider is used by default when API keys are configured.'}
             </p>
           </div>
 
-          {settings.provider === 'openai' ? (
+          {settings.provider === 'openai' && (
             <>
               {/* OpenAI API Key */}
               <div>
@@ -203,7 +287,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </p>
               </div>
             </>
-          ) : (
+          )}
+
+          {settings.provider === 'google' && (
             <>
               {/* Google Gemini API Key */}
               <div>
@@ -276,6 +362,142 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </p>
               </div>
             </>
+          )}
+
+          {settings.provider === 'local_gemma' && (
+            <div className="space-y-4">
+              {/* WebGPU Hardware Status */}
+              <div
+                className={`p-3 rounded-xl border ${
+                  gpuStatus?.supported
+                    ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
+                    : 'bg-rose-950/20 border-rose-500/30 text-rose-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 text-xs font-semibold">
+                  {gpuStatus?.supported ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>WebGPU Hardware Acceleration Available</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-4 h-4 text-rose-400" />
+                      <span>WebGPU Acceleration Not Detected</span>
+                    </>
+                  )}
+                </div>
+                <p className="text-[11px] mt-1 text-slate-300/80 leading-relaxed">
+                  {gpuStatus?.supported
+                    ? `Adapter: ${gpuStatus.adapterName || 'GPU Hardware'}. High-speed in-browser tensor execution is enabled.`
+                    : gpuStatus?.reason ||
+                      'WebGPU is not enabled in this browser. Please enable chrome://flags/#enable-unsafe-webgpu or use Chrome/Edge 113+.'}
+                </p>
+              </div>
+
+              {/* Model Selection */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Local Gemma Model</span>
+                  </span>
+                  <span className="text-[10px] text-purple-400 font-mono">WebLLM / Apache TVM</span>
+                </label>
+                <select
+                  value={settings.localGemmaModel || DEFAULT_GEMMA_MODEL}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSettings({ ...settings, localGemmaModel: val });
+                    refreshCacheStatus(val);
+                  }}
+                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-purple-500 transition"
+                >
+                  {GEMMA_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.size} • {m.vram} VRAM)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Model Download & Cache Management */}
+              <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
+                    <HardDrive className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Browser Model Cache</span>
+                  </span>
+                  {isCached ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                      <CheckCircle2 className="w-2.5 h-2.5" />
+                      Cached & Ready
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      Not Downloaded (~1.5 GB)
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Gemma weights are cached in your browser's persistent CacheStorage. Once downloaded, inference runs entirely offline without contacting any external servers.
+                </p>
+
+                {downloadProgress && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between text-[11px] text-slate-300 font-mono">
+                      <span className="truncate pr-2">{downloadProgress.text}</span>
+                      <span>{Math.round(downloadProgress.progress * 100)}%</span>
+                    </div>
+                    <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="bg-purple-500 h-full transition-all duration-200 ease-out"
+                        style={{ width: `${Math.round(downloadProgress.progress * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {downloadError && (
+                  <p className="text-[11px] text-rose-400 bg-rose-950/30 p-2 rounded-lg border border-rose-800/40">
+                    {downloadError}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-2 pt-1">
+                  {!isCached ? (
+                    <button
+                      type="button"
+                      disabled={isDownloading || !gpuStatus?.supported}
+                      onClick={handleDownloadModel}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium text-xs transition shadow-sm shadow-purple-600/20"
+                    >
+                      {isDownloading ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Downloading Weights...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download & Initialize Gemma 2B</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleDeleteCache}
+                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-850 hover:bg-rose-950/40 text-rose-400 text-xs transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Cached Model</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Execution Overrides */}

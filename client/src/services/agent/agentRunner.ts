@@ -97,6 +97,7 @@ async function runOfflineFallback(
 }
 
 import { runGoogleAgentAssistant } from './googleAgentRunner';
+import { runLocalGemmaAgent } from './localGemmaAgentRunner';
 
 /**
  * Executes an autonomous, tool-calling agent run using the OpenAI Agents SDK.
@@ -230,10 +231,25 @@ export async function runAgenticAssistant(
   query: string,
   projectId?: string,
   conversationHistory: ChatHistoryItem[] = [],
-  onActivity?: (steps: AgentActivityStep[]) => void
+  onActivity?: (steps: AgentActivityStep[]) => void,
+  onToken?: (delta: string) => void
 ): Promise<AgentAnswer> {
   const settings = getAISettings();
   const activeProvider = getActiveAIProvider(settings);
+
+  // If active provider is Local Gemma SLM (WebGPU)
+  if (activeProvider === 'local_gemma') {
+    try {
+      return await runLocalGemmaAgent(query, projectId, conversationHistory, onActivity, onToken);
+    } catch (err: any) {
+      console.warn('Local Gemma Agent execution error, falling back to local synthesis:', err);
+      const fallback = await runOfflineFallback(query, projectId, onActivity);
+      return {
+        ...fallback,
+        content: `*(Local Gemma Notice: ${err?.message || err}. Showing standard local documentation results)*\n\n${fallback.content}`,
+      };
+    }
+  }
 
   // If active provider is Google (selected button when both have keys, or only Google key present)
   if (activeProvider === 'google') {

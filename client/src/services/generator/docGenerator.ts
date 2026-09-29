@@ -10,7 +10,7 @@ import {
 } from './promptBuilder';
 import { GoogleGenAI } from '@google/genai';
 
-export type AIProvider = 'openai' | 'google';
+export type AIProvider = 'openai' | 'google' | 'local_gemma';
 
 export interface AISettings {
   provider: AIProvider;
@@ -19,6 +19,7 @@ export interface AISettings {
   model: string;
   googleApiKey: string;
   googleModel: string;
+  localGemmaModel?: string;
   forceDeterministicDocs?: boolean;
   forceLocalAnswers?: boolean;
 }
@@ -30,6 +31,7 @@ export function getAISettings(): AISettings {
   const model = localStorage.getItem('pp_pedia_openai_model') || 'gpt-4o-mini';
   const googleApiKey = localStorage.getItem('pp_pedia_google_key') || '';
   const googleModel = localStorage.getItem('pp_pedia_google_model') || 'gemini-2.5-flash';
+  const localGemmaModel = localStorage.getItem('pp_pedia_local_gemma_model') || 'gemma-2-2b-it-q4f32_1-MLC';
   const forceDeterministicDocs = localStorage.getItem('pp_pedia_force_deterministic_docs') === 'true';
   const forceLocalAnswers = localStorage.getItem('pp_pedia_force_local_answers') === 'true';
 
@@ -49,6 +51,7 @@ export function getAISettings(): AISettings {
     model,
     googleApiKey,
     googleModel,
+    localGemmaModel,
     forceDeterministicDocs,
     forceLocalAnswers,
   };
@@ -61,18 +64,24 @@ export function saveAISettings(settings: AISettings): void {
   localStorage.setItem('pp_pedia_openai_model', settings.model.trim());
   localStorage.setItem('pp_pedia_google_key', (settings.googleApiKey || '').trim());
   localStorage.setItem('pp_pedia_google_model', (settings.googleModel || '').trim());
+  localStorage.setItem('pp_pedia_local_gemma_model', (settings.localGemmaModel || 'gemma-2-2b-it-q4f32_1-MLC').trim());
   localStorage.setItem('pp_pedia_force_deterministic_docs', String(Boolean(settings.forceDeterministicDocs)));
   localStorage.setItem('pp_pedia_force_local_answers', String(Boolean(settings.forceLocalAnswers)));
 }
 
-export type ActiveAIProvider = 'openai' | 'google' | 'offline';
+export type ActiveAIProvider = 'openai' | 'google' | 'local_gemma' | 'offline';
 
 /**
  * Determines the active AI provider.
+ * When Local Gemma is selected, it takes priority as the local engine.
  * When keys for both OpenAI and Google are present, the selected button (settings.provider)
  * is considered the default model.
  */
 export function getActiveAIProvider(settings: AISettings): ActiveAIProvider {
+  if (settings.provider === 'local_gemma') {
+    return 'local_gemma';
+  }
+
   if (settings.forceLocalAnswers) {
     return 'offline';
   }
@@ -82,7 +91,7 @@ export function getActiveAIProvider(settings: AISettings): ActiveAIProvider {
 
   // If both have keys, user's selected button is the default model
   if (hasOpenAI && hasGoogle) {
-    return settings.provider;
+    return settings.provider === 'google' ? 'google' : 'openai';
   }
 
   // If only one provider has a key configured, use it
@@ -96,6 +105,70 @@ export function getActiveAIProvider(settings: AISettings): ActiveAIProvider {
 
   return 'offline';
 }
+
+export interface ActiveAIInfo {
+  provider: ActiveAIProvider;
+  label: string;
+  subLabel?: string;
+  model: string;
+  badgeStyle: string;
+  hasKey: boolean;
+}
+
+export function getActiveAIInfo(settings: AISettings): ActiveAIInfo {
+  const provider = getActiveAIProvider(settings);
+  if (provider === 'local_gemma') {
+    const rawModel = settings.localGemmaModel || 'gemma-2-2b-it-q4f32_1-MLC';
+    let displayName = 'Gemma 2 2B';
+    if (rawModel.includes('1.1') || rawModel.includes('gemma-2b-it')) {
+      displayName = 'Gemma 1.1 2B';
+    } else if (rawModel.includes('9b')) {
+      displayName = 'Gemma 2 9B';
+    }
+    return {
+      provider,
+      label: displayName,
+      subLabel: 'WebGPU',
+      model: rawModel,
+      badgeStyle: 'bg-purple-500/15 text-purple-300 border-purple-500/30 hover:border-purple-500/60',
+      hasKey: true,
+    };
+  }
+
+  if (provider === 'google') {
+    const model = settings.googleModel || 'gemini-2.5-flash';
+    return {
+      provider,
+      label: `Gemini ${model.replace(/^gemini-/, '')}`,
+      subLabel: 'BYOK',
+      model,
+      badgeStyle: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:border-emerald-500/60',
+      hasKey: Boolean(settings.googleApiKey && settings.googleApiKey.trim().length > 5),
+    };
+  }
+
+  if (provider === 'openai') {
+    const model = settings.model || 'gpt-4o-mini';
+    return {
+      provider,
+      label: model,
+      subLabel: 'BYOK',
+      model,
+      badgeStyle: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30 hover:border-indigo-500/60',
+      hasKey: Boolean(settings.apiKey && settings.apiKey.trim().length > 5),
+    };
+  }
+
+  return {
+    provider: 'offline',
+    label: 'Local RAG',
+    subLabel: 'Offline',
+    model: 'Deterministic',
+    badgeStyle: 'bg-slate-800/80 text-slate-300 border-slate-700/80 hover:border-slate-600',
+    hasKey: false,
+  };
+}
+
 
 /**
  * Calls OpenAI API (or compatible proxy) to generate documentation,

@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Layers,
   BookOpen,
@@ -6,8 +5,10 @@ import {
   Settings,
   ShieldCheck,
   Zap,
+  Sparkles,
 } from 'lucide-react';
 import { ProjectRecord } from '../../types/db';
+import { ActiveAIInfo } from '../../services/generator/docGenerator';
 
 export type AppView = 'dashboard' | 'reader' | 'chat';
 
@@ -18,7 +19,7 @@ interface HeaderProps {
   activeProjectId?: string;
   onSelectProject: (id: string) => void;
   onOpenSettings: () => void;
-  hasApiKey: boolean;
+  aiInfo: ActiveAIInfo;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -28,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeProjectId,
   onSelectProject,
   onOpenSettings,
-  hasApiKey,
+  aiInfo,
 }) => {
   return (
     <header className="h-[65px] border-b border-slate-800/80 bg-slate-900/70 backdrop-blur-md px-6 flex items-center justify-between text-slate-100 sticky top-0 z-40">
@@ -118,21 +119,32 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         )}
 
-        {/* AI Provider Status */}
+        {/* AI Provider Status Button */}
         <button
           onClick={onOpenSettings}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700/80 text-xs text-slate-300 transition"
-          title="Configure AI & Storage"
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition shadow-sm select-none ${aiInfo.badgeStyle}`}
+          title={`Active AI: ${aiInfo.label} (${aiInfo.model}) · Click to open Settings`}
         >
-          {hasApiKey ? (
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          {aiInfo.provider === 'local_gemma' ? (
+            <Sparkles className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+          ) : aiInfo.provider === 'google' ? (
+            <Sparkles className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+          ) : aiInfo.provider === 'openai' ? (
+            <ShieldCheck className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
           ) : (
-            <Zap className="w-3.5 h-3.5 text-indigo-400" />
+            <Zap className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
           )}
-          <span className="hidden sm:inline">
-            {hasApiKey ? 'OpenAI BYOK' : 'Local AI Engine'}
-          </span>
-          <Settings className="w-3.5 h-3.5 text-slate-400 ml-0.5" />
+
+          <div className="flex items-center gap-1.5 leading-none">
+            <span className="font-semibold tracking-tight">{aiInfo.label}</span>
+            {aiInfo.subLabel && (
+              <span className="hidden lg:inline text-[10px] px-1.5 py-0.5 rounded bg-slate-900/60 border border-slate-700/50 font-mono opacity-80">
+                {aiInfo.subLabel}
+              </span>
+            )}
+          </div>
+
+          <Settings className="w-3.5 h-3.5 opacity-60 ml-0.5 hover:opacity-100 transition" />
         </button>
       </div>
     </header>

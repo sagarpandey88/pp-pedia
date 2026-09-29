@@ -1194,3 +1194,57 @@ export function getGoogleAgentTools(): GoogleAgentToolSet {
     executorMap,
   };
 }
+
+export interface GemmaAgentToolSet {
+  tools: Array<{
+    type: 'function';
+    function: {
+      name: string;
+      description: string;
+      parameters: Record<string, unknown>;
+    };
+  }>;
+  executorMap: Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>;
+}
+
+export function getGemmaAgentTools(curatedOnly = true): GemmaAgentToolSet {
+  const allTools = getAllAgentTools();
+  const executorMap = new Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>();
+
+  for (const t of allTools) {
+    const toolName = (t as any).name;
+    executorMap.set(toolName, async (args, context) => {
+      const inputStr = typeof args === 'string' ? args : JSON.stringify(args ?? {});
+      return (t as any).invoke({ context }, inputStr);
+    });
+  }
+
+  const curatedNames = new Set([
+    'analyze_column_impact',
+    'analyze_validation_impact',
+    'query_flow_integrations',
+    'semantic_search',
+    'inspect_dataverse_entity',
+    'inspect_cloud_flow',
+    'read_document_markdown',
+  ]);
+
+  const sourceDeclarations = curatedOnly
+    ? GOOGLE_TOOL_DECLARATIONS.filter((d) => curatedNames.has(d.name))
+    : GOOGLE_TOOL_DECLARATIONS;
+
+  const tools = sourceDeclarations.map((d) => ({
+    type: 'function' as const,
+    function: {
+      name: d.name,
+      description: d.description,
+      parameters: d.parametersJsonSchema,
+    },
+  }));
+
+  return {
+    tools,
+    executorMap,
+  };
+}
+

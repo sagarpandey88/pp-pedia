@@ -29,14 +29,15 @@ export async function askRAGAssistant(
   projectId?: string,
   _limit = 10,
   conversationHistory: ChatMessage[] = [],
-  onActivity?: (steps: AgentActivityStep[]) => void
+  onActivity?: (steps: AgentActivityStep[]) => void,
+  onToken?: (token: string) => void
 ): Promise<RAGAnswer> {
   const historyItems = conversationHistory.map((m) => ({
     role: m.role,
     content: m.content,
   }));
 
-  const answer = await runAgenticAssistant(query, projectId, historyItems, onActivity);
+  const answer = await runAgenticAssistant(query, projectId, historyItems, onActivity, onToken);
 
   return {
     content: answer.content,
