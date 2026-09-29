@@ -1,4 +1,4 @@
-import { getOrInitGemmaEngine, DEFAULT_GEMMA_MODEL, isNativeFunctionCallingSupported } from '../gemma/gemmaEngine';
+import { getOrInitGemmaEngine, generateGemmaResponse, DEFAULT_GEMMA_MODEL } from '../gemma/gemmaEngine';
 import { getGemmaAgentTools } from './agentTools';
 import { AgentAnswer, AgentExecutionContext, AgentActivityStep } from './agentTypes';
 import { ChatHistoryItem } from './agentRunner';
@@ -188,7 +188,6 @@ export async function runLocalGemmaAgent(
 ): Promise<AgentAnswer> {
   const settings = getAISettings();
   const modelId = settings.localGemmaModel || DEFAULT_GEMMA_MODEL;
-  let supportsNativeTools = isNativeFunctionCallingSupported(modelId);
 
   const context: AgentExecutionContext = {
     projectId,
@@ -202,20 +201,19 @@ export async function runLocalGemmaAgent(
   const initStep: AgentActivityStep = {
     id: initStepId,
     toolName: 'gemma_engine',
-    label: `Initialize ${modelShortName} (WebGPU)`,
+    label: `Initialize ${modelShortName} (ONNX WebGPU)`,
     status: 'running',
   };
   context.steps.push(initStep);
   onActivity?.([...context.steps]);
 
-  let engine;
   try {
-    engine = await getOrInitGemmaEngine(modelId, (report) => {
+    await getOrInitGemmaEngine(modelId, (report) => {
       initStep.outputSummary = report.text;
       onActivity?.([...context.steps]);
     });
     initStep.status = 'completed';
-    initStep.outputSummary = `${modelShortName} active in Web Worker (${modelId})`;
+    initStep.outputSummary = `${modelShortName} active in Web Worker`;
     onActivity?.([...context.steps]);
   } catch (err: any) {
     initStep.status = 'failed';
@@ -227,12 +225,8 @@ export async function runLocalGemmaAgent(
   const { tools, executorMap } = getGemmaAgentTools(true);
   const availableToolNames = new Set(tools.map((t) => t.function.name));
 
-  const systemInstruction = buildFunctionGemmaSystemPrompt(tools);
-
   // Build message history
-  const messages: any[] = [
-    { role: 'system', content: systemInstruction },
-  ];
+  const messages: any[] = [];
 
   if (conversationHistory.length > 0) {
     const recent = conversationHistory.slice(-4);
@@ -254,134 +248,80 @@ export async function runLocalGemmaAgent(
     turn++;
     const isLastTurn = turn === maxTurns;
 
-    const requestPayload: any = {
-      messages,
-      temperature: 0.1,
-    };
-
-    if (supportsNativeTools && !isLastTurn) {
-      requestPayload.tools = tools as any;
-      requestPayload.tool_choice = 'auto';
-    }
-
-    logger.agentCycle(modelShortName, turn, modelId, requestPayload);
+    logger.agentCycle(modelShortName, turn, modelId, { messagesCount: messages.length });
     const cycleStartTime = performance.now();
 
-    let response;
+    let rawContent = '';
     try {
-      response = await engine.chat.completions.create(requestPayload);
+      rawContent = await generateGemmaResponse(
+        {
+          messages,
+          tools: !isLastTurn ? tools : undefined,
+          maxNewTokens: 256,
+          temperature: 0.1,
+        },
+        modelId
+      );
     } catch (err: any) {
-      // If native tool calling threw UnsupportedModelIdError, switch to prompt-based tool execution
-      const errMsg = String(err?.message || err);
-      if (
-        requestPayload.tools &&
-        (err?.name === 'UnsupportedModelIdError' || errMsg.includes('tools') || errMsg.includes('UnsupportedModelIdError'))
-      ) {
-        console.warn('Native tools rejected by WebLLM, switching to FunctionGemma token prompt:', err);
-        supportsNativeTools = false;
-        delete requestPayload.tools;
-        delete requestPayload.tool_choice;
-        messages[0] = { role: 'system', content: buildFunctionGemmaSystemPrompt(tools) };
-        response = await engine.chat.completions.create(requestPayload);
-      } else {
-        throw err;
-      }
+      console.warn('FunctionGemma generation error:', err);
+      break;
     }
 
     const duration = Math.round(performance.now() - cycleStartTime);
-    const choice = response.choices[0];
-    const message = choice.message;
-    const toolCalls = message.tool_calls;
-    const rawContent = message.content || '';
-
-    // Check for native tool calls or FunctionGemma token calls
-    const fallbackCalls =
-      !toolCalls || toolCalls.length === 0
-        ? parseFunctionGemmaCalls(rawContent, availableToolNames)
-        : [];
+    const parsedCalls = !isLastTurn ? parseFunctionGemmaCalls(rawContent, availableToolNames) : [];
 
     logger.llmResponse(
       modelShortName,
       turn,
       {
         content: rawContent,
-        toolCalls: toolCalls?.map((c: any) => ({ name: c.function?.name, args: c.function?.arguments })) || [],
-        fallbackCalls,
+        toolCalls: parsedCalls,
       },
-      response.usage,
+      undefined,
       duration
     );
 
-    if ((!toolCalls || toolCalls.length === 0) && fallbackCalls.length === 0) {
-      // Model produced final synthesized answer
+    if (parsedCalls.length === 0) {
       finalAnswer = cleanFinalAnswer(rawContent);
       break;
     }
 
-    // Process native tool calls
-    if (toolCalls && toolCalls.length > 0) {
-      messages.push(message);
+    // Process tool calls
+    for (const call of parsedCalls) {
+      const toolName = call.name;
+      const toolArgs = call.args;
 
-      for (const call of toolCalls) {
-        const toolName = call.function.name;
-        let toolArgs: Record<string, unknown> = {};
+      const executor = executorMap.get(toolName);
+      let toolOutput = '';
+      if (executor) {
         try {
-          toolArgs =
-            typeof call.function.arguments === 'string'
-              ? JSON.parse(call.function.arguments)
-              : call.function.arguments || {};
-        } catch {
-          toolArgs = {};
+          toolOutput = await executor(toolArgs, context);
+        } catch (err: any) {
+          toolOutput = `Tool execution error: ${err?.message || err}`;
         }
-
-        const executor = executorMap.get(toolName);
-        let toolOutput = '';
-        if (executor) {
-          try {
-            toolOutput = await executor(toolArgs, context);
-          } catch (err: any) {
-            toolOutput = `Tool execution error: ${err?.message || err}`;
-          }
-        } else {
-          toolOutput = `Error: Tool "${toolName}" not found.`;
-        }
-
-        messages.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          content: toolOutput,
-        });
+      } else {
+        toolOutput = `Error: Tool "${toolName}" not found.`;
       }
-    } else if (fallbackCalls.length > 0) {
-      // Process FunctionGemma token tool calls
-      messages.push({ role: 'assistant', content: rawContent });
 
-      for (const call of fallbackCalls) {
-        const toolName = call.name;
-        const toolArgs = call.args;
+      messages.push({
+        role: 'assistant',
+        content: rawContent,
+        tool_calls: [
+          {
+            type: 'function',
+            function: {
+              name: toolName,
+              arguments: toolArgs,
+            },
+          },
+        ],
+      });
 
-        const executor = executorMap.get(toolName);
-        let toolOutput = '';
-        if (executor) {
-          try {
-            toolOutput = await executor(toolArgs, context);
-          } catch (err: any) {
-            toolOutput = `Tool execution error: ${err?.message || err}`;
-          }
-        } else {
-          toolOutput = `Error: Tool "${toolName}" not found.`;
-        }
-
-        const isApproachingMax = turn >= maxTurns - 1;
-        const guidance = isApproachingMax
-          ? `You have reached the limit of tool queries. Based on all gathered observations, provide your final technical answer now. Do NOT call any more tools.`
-          : `Review the observation above. If you have enough information, synthesize your final answer. If you need more details, you may call another tool.`;
-
-        messages.push({
-          role: 'user',
-          content: `<start_function_response>response:${toolOutput}<end_function_response>\n${guidance}`,
-        });
-      }
+      messages.push({
+        role: 'tool',
+        name: toolName,
+        content: toolOutput,
+      });
     }
   }
 
@@ -396,25 +336,23 @@ export async function runLocalGemmaAgent(
     }
 
     try {
-      const stream = await engine.chat.completions.create({
-        messages,
-        temperature: 0.2,
-        stream: true,
-      });
-
-      let fullText = '';
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content || '';
-        fullText += delta;
-        onToken?.(delta);
-      }
-      finalAnswer = cleanFinalAnswer(fullText);
+      finalAnswer = await generateGemmaResponse(
+        {
+          messages,
+          maxNewTokens: 256,
+          temperature: 0.2,
+          onToken,
+        },
+        modelId
+      );
+      finalAnswer = cleanFinalAnswer(finalAnswer);
     } catch {
       // Ignore stream synthesis error and proceed to semantic fallback
     }
   } else if (onToken) {
     onToken(finalAnswer);
   }
+
 
   // Fallback: If final answer is somehow empty, directly show semantic outputs (NO BYOK)
   if (!finalAnswer) {

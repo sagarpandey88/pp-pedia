@@ -35,10 +35,11 @@ export function getAISettings(): AISettings {
   const rawStoredLocalModel = localStorage.getItem('pp_pedia_local_gemma_model') || '';
   const localGemmaModel =
     !rawStoredLocalModel ||
+    rawStoredLocalModel === 'functiongemma-270m-it' ||
     rawStoredLocalModel.startsWith('gemma-2-') ||
     rawStoredLocalModel.startsWith('gemma-2b') ||
     rawStoredLocalModel.startsWith('Hermes-')
-      ? 'functiongemma-270m-it'
+      ? 'onnx-community/functiongemma-270m-it-ONNX'
       : rawStoredLocalModel;
   const forceDeterministicDocs = localStorage.getItem('pp_pedia_force_deterministic_docs') === 'true';
   const forceLocalAnswers = localStorage.getItem('pp_pedia_force_local_answers') === 'true';
