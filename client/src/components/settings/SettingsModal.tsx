@@ -10,25 +10,15 @@ import {
   ExternalLink,
   Sliders,
   Sparkles,
-  Download,
+  Zap,
   HardDrive,
-  RefreshCw,
   CheckCircle2,
-  AlertTriangle,
+  ShieldCheck,
   Terminal,
 } from 'lucide-react';
 import { getAISettings, saveAISettings, AISettings } from '../../services/generator/docGenerator';
 import { getDatabaseStats, clearAllData } from '../../services/db';
 import { DatabaseStats } from '../../types/db';
-import {
-  checkWebGPUSupport,
-  isGemmaCached,
-  deleteGemmaCache,
-  getOrInitGemmaEngine,
-  GEMMA_MODELS,
-  DEFAULT_GEMMA_MODEL,
-  WebGPUStatus,
-} from '../../services/gemma/gemmaEngine';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -48,66 +38,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     model: 'gpt-4o-mini',
     googleApiKey: '',
     googleModel: 'gemini-2.5-flash',
-    localGemmaModel: DEFAULT_GEMMA_MODEL,
     forceDeterministicDocs: false,
     forceLocalAnswers: false,
   });
   const [saved, setSaved] = useState(false);
   const [dbStats, setDbStats] = useState<DatabaseStats | null>(null);
 
-  // Gemma state
-  const [gpuStatus, setGpuStatus] = useState<WebGPUStatus | null>(null);
-  const [isCached, setIsCached] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<{ text: string; progress: number } | null>(null);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-
   useEffect(() => {
     if (isOpen) {
       const s = getAISettings();
       setSettings(s);
       getDatabaseStats().then(setDbStats).catch(console.error);
-      checkWebGPUSupport().then(setGpuStatus);
-      isGemmaCached(s.localGemmaModel || DEFAULT_GEMMA_MODEL).then(setIsCached);
     }
   }, [isOpen]);
-
-  const refreshCacheStatus = async (modelId: string) => {
-    const cached = await isGemmaCached(modelId);
-    setIsCached(cached);
-  };
-
-  const handleDownloadModel = async () => {
-    setIsDownloading(true);
-    setDownloadError(null);
-    console.log('[SettingsModal] Initiating model download for:', settings.localGemmaModel || DEFAULT_GEMMA_MODEL);
-    try {
-      await getOrInitGemmaEngine(settings.localGemmaModel || DEFAULT_GEMMA_MODEL, (report) => {
-        console.log('[SettingsModal] Download progress:', report.text, `${Math.round(report.progress * 100)}%`);
-        setDownloadProgress(report);
-      });
-      setIsCached(true);
-      console.log('[SettingsModal] Model successfully cached and engine ready!');
-    } catch (err: any) {
-      const msg = err?.message || String(err) || 'Failed to download Gemma model';
-      console.error('[SettingsModal] Download model failed:', err);
-      setDownloadError(msg);
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
-  const handleDeleteCache = async () => {
-    const modelObj =
-      GEMMA_MODELS.find((m) => m.id === (settings.localGemmaModel || DEFAULT_GEMMA_MODEL)) ||
-      GEMMA_MODELS[0];
-    const shortName = modelObj.name.split(' (')[0];
-    if (confirm(`Delete cached weights for ${shortName} to free up browser storage?`)) {
-      await deleteGemmaCache(settings.localGemmaModel || DEFAULT_GEMMA_MODEL);
-      setIsCached(false);
-      setDownloadProgress(null);
-    }
-  };
 
   if (!isOpen) return null;
 
@@ -133,39 +76,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const selectedLocalModel =
-    GEMMA_MODELS.find((m) => m.id === (settings.localGemmaModel || DEFAULT_GEMMA_MODEL)) ||
-    GEMMA_MODELS[0];
-  const selectedModelShortName = selectedLocalModel.name.split(' (')[0];
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800 flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center">
-              <Key className="w-4 h-4" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-xl bg-indigo-600/10 text-indigo-400 border border-indigo-500/20">
+              <Sliders className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">Settings & Storage</h3>
-              <p className="text-xs text-slate-400">Configure AI Providers & Local Database</p>
+              <h2 className="text-base font-bold text-white">Application Settings</h2>
+              <p className="text-xs text-slate-400">
+                Configure AI generation providers, local PGlite engine, and storage
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="py-5 space-y-5 overflow-y-auto flex-1 pr-1">
-          {/* Provider Selection */}
+        {/* Content body */}
+        <div className="p-6 overflow-y-auto space-y-6">
+          {/* Provider Selector Tabs */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-2">
-              Agentic AI Provider
+              Default AI Reasoning Engine
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setSettings({ ...settings, provider: 'openai' })}
@@ -175,8 +117,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                 }`}
               >
-                <span className="font-semibold text-xs mb-0.5">OpenAI SDK</span>
-                <span className="text-[10px] text-slate-400">Cloud BYOK</span>
+                <span className="font-semibold text-xs mb-0.5">OpenAI / Compatible</span>
+                <span className="text-[10px] text-slate-400">Agents SDK • BYOK</span>
               </button>
               <button
                 type="button"
@@ -190,29 +132,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span className="font-semibold text-xs mb-0.5">Google Gen AI</span>
                 <span className="text-[10px] text-slate-400">Gemini BYOK</span>
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSettings({ ...settings, provider: 'local_gemma' });
-                  refreshCacheStatus(settings.localGemmaModel || DEFAULT_GEMMA_MODEL);
-                }}
-                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition ${
-                  settings.provider === 'local_gemma'
-                    ? 'bg-purple-600/20 border-purple-500 text-white shadow-sm shadow-purple-500/10'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                }`}
-              >
-                <span className="font-semibold text-xs mb-0.5 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-purple-400" />
-                  Local Gemma
-                </span>
-                <span className="text-[10px] text-purple-300/80">In-Browser WebGPU</span>
-              </button>
             </div>
             <p className="text-[11px] text-slate-500 mt-2">
-              {settings.provider === 'local_gemma'
-                ? 'Runs 100% in your browser using WebGPU. No API keys or internet connection required.'
-                : 'The selected provider is used by default when API keys are configured.'}
+              {settings.forceLocalAnswers
+                ? 'Forced local mode is active. AI cloud calls are bypassed; responses are powered by PGlite.'
+                : 'The selected provider is used for autonomous agent reasoning and document generation.'}
+            </p>
+          </div>
+
+          {/* Local PGlite Tools Callout */}
+          <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-indigo-300">
+                <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Local Processing &amp; Slash Commands</span>
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-mono">
+                PGlite WASM • Zero-Cost
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Use slash commands (e.g. <code className="text-indigo-300">/health</code>, <code className="text-indigo-300">/impact</code>, <code className="text-indigo-300">/er</code>, <code className="text-indigo-300">/flows</code>, <code className="text-indigo-300">/triggers</code>) and action chips in the chat box. They run 100% locally against PGlite with sub-millisecond autocomplete and zero API tokens consumed.
             </p>
           </div>
 
@@ -232,7 +172,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
-                  If left blank, pp-pedia runs in 100% offline mode with full deterministic documentation & local RAG.
+                  If left blank, pp-pedia runs in 100% offline mode with full deterministic documentation &amp; local RAG.
                 </p>
               </div>
 
@@ -328,23 +268,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition font-mono"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Obtain a Gemini API key free from Google AI Studio. If blank, pp-pedia runs offline.
+                  Required for Google GenAI / Gemini provider. Get a free API key from Google AI Studio.
                 </p>
               </div>
 
-              {/* Gemini Model Name */}
+              {/* Gemini Model */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <Cpu className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Gemini Model Name</span>
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Gemini Model</span>
                   </span>
                   <span className="text-[10px] text-slate-500 font-normal">Free text / Custom</span>
                 </label>
                 <input
                   type="text"
                   list="gemini-model-suggestions"
-                  placeholder="e.g. gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash"
+                  placeholder="gemini-2.5-flash"
                   value={settings.googleModel}
                   onChange={(e) => setSettings({ ...settings, googleModel: e.target.value })}
                   className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition font-mono"
@@ -379,263 +319,131 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </>
           )}
 
-          {settings.provider === 'local_gemma' && (
-            <div className="space-y-4">
-              {/* WebGPU Hardware Status */}
-              <div
-                className={`p-3 rounded-xl border ${
-                  gpuStatus?.supported
-                    ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
-                    : 'bg-rose-950/20 border-rose-500/30 text-rose-300'
-                }`}
-              >
-                <div className="flex items-center gap-2 text-xs font-semibold">
-                  {gpuStatus?.supported ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span>WebGPU Hardware Acceleration Available</span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle className="w-4 h-4 text-rose-400" />
-                      <span>WebGPU Acceleration Not Detected</span>
-                    </>
-                  )}
-                </div>
-                <p className="text-[11px] mt-1 text-slate-300/80 leading-relaxed">
-                  {gpuStatus?.supported
-                    ? `Adapter: ${gpuStatus.adapterName || 'GPU Hardware'}. High-speed in-browser tensor execution is enabled.`
-                    : gpuStatus?.reason ||
-                      'WebGPU is not enabled in this browser. Please enable chrome://flags/#enable-unsafe-webgpu or use Chrome/Edge 113+.'}
-                </p>
-              </div>
-
-              {/* Dedicated Model Card */}
-              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
-                    <Cpu className="w-3.5 h-3.5 text-purple-400" />
-                    <span>FunctionGemma 270M</span>
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 font-mono">
-                    Fast Tool Calling (~145 MB)
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Ultra-lightweight SLM specialized in rapid function calling (&lt;80ms latency). Runs locally in WebGPU without transmitting data to external servers.
-                </p>
-              </div>
-
-              {/* Model Download & Cache Management */}
-              <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-200 flex items-center gap-1.5">
-                    <HardDrive className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Browser Model Cache</span>
-                  </span>
-                  {isCached ? (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                      <CheckCircle2 className="w-2.5 h-2.5" />
-                      Cached & Ready
-                    </span>
-                  ) : (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                      Not Downloaded ({selectedLocalModel.size})
-                    </span>
-                  )}
-                </div>
-
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Model weights (~145 MB) are cached in your browser's persistent CacheStorage. If offline execution encounters an issue, pp-pedia strictly presents local semantic search findings without escalating to remote BYOK models.
-                </p>
-
-                {downloadProgress && (
-                  <div className="space-y-1.5 pt-1">
-                    <div className="flex items-center justify-between text-[11px] text-slate-300 font-mono">
-                      <span className="truncate pr-2">{downloadProgress.text}</span>
-                      <span>{Math.round(downloadProgress.progress * 100)}%</span>
-                    </div>
-                    <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                      <div
-                        className="bg-purple-500 h-full transition-all duration-200 ease-out"
-                        style={{ width: `${Math.round(downloadProgress.progress * 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {downloadError && (
-                  <div className="space-y-1.5">
-                    <p className="text-[11px] text-rose-400 bg-rose-950/30 p-2 rounded-lg border border-rose-800/40">
-                      {downloadError}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleDeleteCache}
-                      className="text-[10px] text-purple-400 hover:text-purple-300 underline block"
-                    >
-                      Clear cached data & retry
-                    </button>
-                  </div>
-                )}
-
-                <div className="flex items-center gap-2 pt-1">
-                  {!isCached ? (
-                    <button
-                      type="button"
-                      disabled={isDownloading}
-                      onClick={handleDownloadModel}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium text-xs transition shadow-sm shadow-purple-600/20"
-                    >
-                      {isDownloading ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Downloading Weights...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-3.5 h-3.5" />
-                          <span>Download & Initialize {selectedModelShortName}</span>
-                        </>
-                      )}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleDeleteCache}
-                      className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-850 hover:bg-rose-950/40 text-rose-400 text-xs transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete Cached {selectedModelShortName}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Execution Overrides */}
           <div className="pt-4 border-t border-slate-800 space-y-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
               <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Offline & Execution Overrides</span>
+              <span>Execution Overrides</span>
             </div>
 
-            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700/80 cursor-pointer transition select-none group">
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={Boolean(settings.forceDeterministicDocs)}
+                checked={settings.forceDeterministicDocs || false}
                 onChange={(e) =>
                   setSettings({ ...settings, forceDeterministicDocs: e.target.checked })
                 }
-                className="mt-0.5 w-4 h-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 bg-slate-900 cursor-pointer"
+                className="mt-0.5 rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500/20"
               />
-              <div className="text-xs">
-                <div className="font-medium text-slate-200 group-hover:text-indigo-300 transition">
-                  Force deterministic documentation generation
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                  Skip LLM API calls during solution ingestion and generate documentation instantly using built-in deterministic AST templates.
-                </div>
+              <div>
+                <span className="text-xs font-medium text-slate-200 block">
+                  Force 100% Deterministic Document Generation
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Bypass LLM API calls during solution ingestion even if keys are provided. Produces instant, standard markdown.
+                </span>
               </div>
             </label>
 
-            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700/80 cursor-pointer transition select-none group">
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={Boolean(settings.forceLocalAnswers)}
+                checked={settings.forceLocalAnswers || false}
                 onChange={(e) =>
                   setSettings({ ...settings, forceLocalAnswers: e.target.checked })
                 }
-                className="mt-0.5 w-4 h-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 bg-slate-900 cursor-pointer"
+                className="mt-0.5 rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500/20"
               />
-              <div className="text-xs">
-                <div className="font-medium text-slate-200 group-hover:text-indigo-300 transition">
-                  Force local answers
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                  Synthesize chat answers strictly from local vector search chunks without sending queries to OpenAI or external models.
-                </div>
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700/80 cursor-pointer transition select-none group">
-              <input
-                type="checkbox"
-                checked={Boolean(settings.enableVerboseLogging)}
-                onChange={(e) =>
-                  setSettings({ ...settings, enableVerboseLogging: e.target.checked })
-                }
-                className="mt-0.5 w-4 h-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 bg-slate-900 cursor-pointer"
-              />
-              <div className="text-xs">
-                <div className="font-medium text-slate-200 group-hover:text-indigo-300 transition flex items-center gap-1.5">
-                  <Terminal className="w-3.5 h-3.5 text-purple-400" />
-                  <span>Enable verbose agent & LLM telemetry</span>
-                  <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-purple-950/80 border border-purple-800/60 text-purple-300">
-                    Console & UI
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                  Log full prompts, tool arguments, raw observations, token usage, and execution latency to the browser DevTools console and chat inspection trail for code optimization.
-                </div>
+              <div>
+                <span className="text-xs font-medium text-slate-200 block">
+                  Force Offline Chat Synthesis (Zero-Token Mode)
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Forces all chat queries and tools to execute strictly within local PGlite without sending tokens to cloud APIs.
+                </span>
               </div>
             </label>
           </div>
 
-          {/* Database Stats */}
-          <div className="pt-3 border-t border-slate-800">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-emerald-400" />
-                Local PGlite Vector Storage
+          {/* Database Statistics */}
+          <div className="pt-4 border-t border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                <Database className="w-3.5 h-3.5 text-indigo-400" />
+                <span>PGlite Local Database</span>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                Persistent IndexedDB
               </span>
-              <span className="text-[10px] font-mono text-slate-400">idb://pp_pedia_db</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5 p-3 rounded-xl bg-slate-950/70 border border-slate-850 text-center">
-              <div>
-                <div className="text-sm font-bold text-slate-100">{dbStats?.project_count ?? '-'}</div>
-                <div className="text-[10px] text-slate-500">Solutions</div>
+            {dbStats && (
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-center">
+                  <div className="text-base font-bold text-white font-mono">
+                    {dbStats.project_count}
+                  </div>
+                  <div className="text-[10px] text-slate-400">Solutions</div>
+                </div>
+                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-center">
+                  <div className="text-base font-bold text-white font-mono">
+                    {dbStats.document_count}
+                  </div>
+                  <div className="text-[10px] text-slate-400">Documents</div>
+                </div>
+                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-center">
+                  <div className="text-base font-bold text-indigo-400 font-mono">
+                    {dbStats.chunk_count}
+                  </div>
+                  <div className="text-[10px] text-slate-400">Embeddings</div>
+                </div>
               </div>
-              <div>
-                <div className="text-sm font-bold text-slate-100">{dbStats?.document_count ?? '-'}</div>
-                <div className="text-[10px] text-slate-500">Documents</div>
-              </div>
-              <div>
-                <div className="text-sm font-bold text-indigo-400">{dbStats?.chunk_count ?? '-'}</div>
-                <div className="text-[10px] text-slate-500">Vector Chunks</div>
-              </div>
-            </div>
+            )}
 
-            <button
-              onClick={handleClearAll}
-              className="mt-3 w-full py-1.5 px-3 rounded-lg border border-rose-900/50 bg-rose-950/30 hover:bg-rose-900/40 text-rose-300 text-xs font-medium flex items-center justify-center gap-2 transition"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Clear All Local Database Data</span>
-            </button>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-900/60 bg-rose-950/20 hover:bg-rose-900/30 text-rose-300 text-xs font-medium transition"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Clear All Solutions &amp; Data</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 transition shadow-lg shadow-indigo-600/20"
-          >
-            {saved ? <Check className="w-3.5 h-3.5" /> : null}
-            <span>{saved ? 'Saved!' : 'Save Settings'}</span>
-          </button>
+        {/* Footer actions */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-900/50">
+          <span className="text-xs text-slate-500 font-mono">
+            {saved ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" />
+                <span>Settings saved successfully!</span>
+              </span>
+            ) : (
+              'Changes are saved locally in your browser'
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition shadow-lg shadow-indigo-600/20 flex items-center gap-1.5"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Save Changes</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 };
-

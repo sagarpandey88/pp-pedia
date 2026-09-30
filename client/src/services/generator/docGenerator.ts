@@ -10,7 +10,7 @@ import {
 } from './promptBuilder';
 import { GoogleGenAI } from '@google/genai';
 
-export type AIProvider = 'openai' | 'google' | 'local_gemma';
+export type AIProvider = 'openai' | 'google';
 
 export interface AISettings {
   provider: AIProvider;
@@ -19,7 +19,6 @@ export interface AISettings {
   model: string;
   googleApiKey: string;
   googleModel: string;
-  localGemmaModel?: string;
   forceDeterministicDocs?: boolean;
   forceLocalAnswers?: boolean;
   enableVerboseLogging?: boolean;
@@ -32,20 +31,11 @@ export function getAISettings(): AISettings {
   const model = localStorage.getItem('pp_pedia_openai_model') || 'gpt-4o-mini';
   const googleApiKey = localStorage.getItem('pp_pedia_google_key') || '';
   const googleModel = localStorage.getItem('pp_pedia_google_model') || 'gemini-2.5-flash';
-  const rawStoredLocalModel = localStorage.getItem('pp_pedia_local_gemma_model') || '';
-  const localGemmaModel =
-    !rawStoredLocalModel ||
-    rawStoredLocalModel === 'functiongemma-270m-it' ||
-    rawStoredLocalModel.startsWith('gemma-2-') ||
-    rawStoredLocalModel.startsWith('gemma-2b') ||
-    rawStoredLocalModel.startsWith('Hermes-')
-      ? 'onnx-community/functiongemma-270m-it-ONNX'
-      : rawStoredLocalModel;
   const forceDeterministicDocs = localStorage.getItem('pp_pedia_force_deterministic_docs') === 'true';
   const forceLocalAnswers = localStorage.getItem('pp_pedia_force_local_answers') === 'true';
   const enableVerboseLogging = localStorage.getItem('pp_pedia_enable_verbose_logging') === 'true';
 
-  let provider = storedProvider;
+  let provider: AIProvider = storedProvider === 'google' ? 'google' : 'openai';
   if (!localStorage.getItem('pp_pedia_ai_provider')) {
     if (apiKey.length > 5) {
       provider = 'openai';
@@ -61,7 +51,6 @@ export function getAISettings(): AISettings {
     model,
     googleApiKey,
     googleModel,
-    localGemmaModel,
     forceDeterministicDocs,
     forceLocalAnswers,
     enableVerboseLogging,
@@ -75,25 +64,19 @@ export function saveAISettings(settings: AISettings): void {
   localStorage.setItem('pp_pedia_openai_model', settings.model.trim());
   localStorage.setItem('pp_pedia_google_key', (settings.googleApiKey || '').trim());
   localStorage.setItem('pp_pedia_google_model', (settings.googleModel || '').trim());
-  localStorage.setItem('pp_pedia_local_gemma_model', (settings.localGemmaModel || 'functiongemma-270m-it').trim());
   localStorage.setItem('pp_pedia_force_deterministic_docs', String(Boolean(settings.forceDeterministicDocs)));
   localStorage.setItem('pp_pedia_force_local_answers', String(Boolean(settings.forceLocalAnswers)));
   localStorage.setItem('pp_pedia_enable_verbose_logging', String(Boolean(settings.enableVerboseLogging)));
 }
 
-export type ActiveAIProvider = 'openai' | 'google' | 'local_gemma' | 'offline';
+export type ActiveAIProvider = 'openai' | 'google' | 'offline';
 
 /**
  * Determines the active AI provider.
- * When Local Gemma is selected, it takes priority as the local engine.
  * When keys for both OpenAI and Google are present, the selected button (settings.provider)
  * is considered the default model.
  */
 export function getActiveAIProvider(settings: AISettings): ActiveAIProvider {
-  if (settings.provider === 'local_gemma') {
-    return 'local_gemma';
-  }
-
   if (settings.forceLocalAnswers) {
     return 'offline';
   }
@@ -129,17 +112,6 @@ export interface ActiveAIInfo {
 
 export function getActiveAIInfo(settings: AISettings): ActiveAIInfo {
   const provider = getActiveAIProvider(settings);
-  if (provider === 'local_gemma') {
-    const rawModel = settings.localGemmaModel || 'functiongemma-270m-it';
-    return {
-      provider,
-      label: 'FunctionGemma 270M',
-      subLabel: 'WebGPU (Fast)',
-      model: rawModel,
-      badgeStyle: 'bg-purple-500/15 text-purple-300 border-purple-500/30 hover:border-purple-500/60',
-      hasKey: true,
-    };
-  }
 
   if (provider === 'google') {
     const model = settings.googleModel || 'gemini-2.5-flash';

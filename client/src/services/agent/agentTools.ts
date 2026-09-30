@@ -1720,7 +1720,7 @@ export function getGoogleAgentTools(): GoogleAgentToolSet {
   };
 }
 
-export interface GemmaAgentToolSet {
+export interface LocalAgentToolSet {
   tools: Array<{
     type: 'function';
     function: {
@@ -1732,7 +1732,7 @@ export interface GemmaAgentToolSet {
   executorMap: Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>;
 }
 
-export function getGemmaAgentTools(curatedOnly = true): GemmaAgentToolSet {
+export function getLocalAgentTools(curatedOnly = true): LocalAgentToolSet {
   const allTools = getAllAgentTools();
   const executorMap = new Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>();
 

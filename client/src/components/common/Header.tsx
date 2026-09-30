@@ -125,9 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
           className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition shadow-sm select-none ${aiInfo.badgeStyle}`}
           title={`Active AI: ${aiInfo.label} (${aiInfo.model}) · Click to open Settings`}
         >
-          {aiInfo.provider === 'local_gemma' ? (
-            <Sparkles className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
-          ) : aiInfo.provider === 'google' ? (
+          {aiInfo.provider === 'google' ? (
             <Sparkles className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
           ) : aiInfo.provider === 'openai' ? (
             <ShieldCheck className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />

@@ -19,16 +19,21 @@ import {
   X,
   Maximize2,
   PanelRightOpen,
+  Terminal,
 } from 'lucide-react';
 import { ProjectRecord, SimilarityResult } from '../../types/db';
 import { TokenUsage } from '../../types/solution';
 import { askRAGAssistant, ChatMessage } from '../../services/rag/ragService';
 import { AgentActivityStep } from '../../services/agent/agentTypes';
 import { getAISettings, getActiveAIProvider } from '../../services/generator/docGenerator';
-import { isGemmaCached, DEFAULT_GEMMA_MODEL } from '../../services/gemma/gemmaEngine';
 import { CitationCard } from './CitationCard';
 import { AgentActivityTrail } from './AgentActivityTrail';
 import { MermaidDiagram } from '../reader/MermaidDiagram';
+import { ChatActionChips } from './ChatActionChips';
+import { CommandAutocompletePopover } from './CommandAutocompletePopover';
+import { getAutocompleteSuggestions, AutocompleteItem, AutocompleteResult } from '../../services/autocomplete/pgliteAutocomplete';
+import { executeLocalSlashCommand, isSlashCommand } from '../../services/agent/localCommandDispatcher';
+import { SlashCommandDefinition } from '../../services/agent/slashCommands';
 
 const ChatCodeBlock: React.FC<{
   className?: string;
@@ -294,28 +299,52 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [liveSteps, setLiveSteps] = useState<AgentActivityStep[]>([]);
   const [streamingAnswer, setStreamingAnswer] = useState('');
-  const [isGemmaReady, setIsGemmaReady] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // PGlite autocomplete state
+  const [autocompleteState, setAutocompleteState] = useState<{
+    active: boolean;
+    items: AutocompleteItem[];
+    selectedIndex: number;
+    prefix: string;
+    replaceRange: { start: number; end: number };
+  }>({
+    active: false,
+    items: [],
+    selectedIndex: 0,
+    prefix: '',
+    replaceRange: { start: 0, end: 0 },
+  });
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const aiSettings = getAISettings();
   const activeProvider = getActiveAIProvider(aiSettings);
 
+  // Trigger PGlite autocomplete when input begins with '/'
   useEffect(() => {
-    if (activeProvider === 'local_gemma') {
-      isGemmaCached(aiSettings.localGemmaModel || DEFAULT_GEMMA_MODEL).then(setIsGemmaReady);
+    if (inputQuery.startsWith('/')) {
+      getAutocompleteSuggestions(inputQuery, activeProjectId).then((res: AutocompleteResult) => {
+        setAutocompleteState({
+          active: res.active,
+          items: res.items,
+          selectedIndex: 0,
+          prefix: res.prefix,
+          replaceRange: res.replaceRange,
+        });
+      });
+    } else {
+      setAutocompleteState((prev) => (prev.active ? { ...prev, active: false, items: [] } : prev));
     }
-  }, [activeProvider, aiSettings.localGemmaModel]);
+  }, [inputQuery, activeProjectId]);
 
   const providerBadge =
-    activeProvider === 'local_gemma'
-      ? { text: `FunctionGemma 270M • WebGPU Agent`, style: 'bg-purple-500/15 text-purple-300 border-purple-500/30' }
-      : activeProvider === 'google'
+    activeProvider === 'google'
       ? { text: `Google Agents SDK • ${aiSettings.googleModel || 'Gemini'}`, style: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' }
       : activeProvider === 'openai'
       ? { text: `OpenAI Agent SDK • ${aiSettings.model || 'GPT'}`, style: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' }
-      : { text: 'Offline Mode • Local RAG', style: 'bg-slate-700/30 text-slate-300 border-slate-600/40' };
+      : { text: 'Local PGlite Engine • 0-Token', style: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -324,6 +353,63 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading, liveSteps, streamingAnswer]);
+
+  const handleSelectAutocompleteItem = (item: AutocompleteItem) => {
+    if (item.category === 'command') {
+      setInputQuery(item.insertText);
+    } else {
+      const before = inputQuery.slice(0, autocompleteState.replaceRange.start);
+      const after = inputQuery.slice(autocompleteState.replaceRange.end);
+      const inserted = item.insertText;
+      const combined = `${before}${inserted} ${after}`.replace(/\s{2,}/g, ' ');
+      setInputQuery(combined);
+    }
+    setAutocompleteState((prev) => ({ ...prev, active: false }));
+    setTimeout(() => inputRef.current?.focus(), 10);
+  };
+
+  const handleSelectChip = (command: SlashCommandDefinition, runInstantly: boolean) => {
+    if (runInstantly) {
+      handleSend(`/${command.name}`);
+    } else {
+      setInputQuery(`/${command.name} `);
+      setTimeout(() => inputRef.current?.focus(), 10);
+    }
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!autocompleteState.active || autocompleteState.items.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setAutocompleteState((prev) => ({
+        ...prev,
+        selectedIndex: (prev.selectedIndex + 1) % prev.items.length,
+      }));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setAutocompleteState((prev) => ({
+        ...prev,
+        selectedIndex: (prev.selectedIndex - 1 + prev.items.length) % prev.items.length,
+      }));
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const item = autocompleteState.items[autocompleteState.selectedIndex];
+      if (item) handleSelectAutocompleteItem(item);
+    } else if (e.key === 'Enter') {
+      const item = autocompleteState.items[autocompleteState.selectedIndex];
+      // If user is choosing an item that needs more parameters or is a parameter
+      if (item && item.category === 'command' && item.insertText.endsWith(' ')) {
+        e.preventDefault();
+        handleSelectAutocompleteItem(item);
+      } else if (item && item.category !== 'command') {
+        e.preventDefault();
+        handleSelectAutocompleteItem(item);
+      }
+    } else if (e.key === 'Escape') {
+      setAutocompleteState((prev) => ({ ...prev, active: false }));
+    }
+  };
 
   const quickQuestions = React.useMemo(() => {
     const list: string[] = [];
@@ -345,6 +431,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
     if (!text || isLoading) return;
 
     setInputQuery('');
+    setAutocompleteState((prev) => ({ ...prev, active: false }));
     setLiveSteps([]);
     setStreamingAnswer('');
     const userMsg: ChatMessage = {
@@ -358,12 +445,24 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
     setIsLoading(true);
 
     try {
+      // 1. Direct Local PGlite Slash Command
+      if (isSlashCommand(text)) {
+        const localAnswer = await executeLocalSlashCommand(
+          text,
+          activeProjectId,
+          (steps: AgentActivityStep[]) => setLiveSteps([...steps])
+        );
+        setMessages((prev) => [...prev, localAnswer]);
+        return;
+      }
+
+      // 2. Regular AI Agent / Vector RAG
       const response = await askRAGAssistant(
         text,
         activeProjectId,
         10,
         messages,
-        (steps) => setLiveSteps([...steps]),
+        (steps: AgentActivityStep[]) => setLiveSteps([...steps]),
         (delta) => setStreamingAnswer((prev) => prev + delta)
       );
       const assistantMsg: ChatMessage = {
@@ -381,7 +480,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
       const errorMsg: ChatMessage = {
         id: `err_${Date.now()}`,
         role: 'assistant',
-        content: `Sorry, an error occurred during agent execution: ${err?.message || err}`,
+        content: `Sorry, an error occurred during execution: ${err?.message || err}`,
         steps: liveSteps,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
@@ -587,16 +686,6 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
 
       {/* Messages area */}
       <div className={`flex-1 overflow-y-auto ${isSidepanel ? 'p-3.5 space-y-4' : 'p-6 space-y-6'}`}>
-        {activeProvider === 'local_gemma' && !isGemmaReady && (
-          <div className="mb-4 p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-center justify-between text-xs text-purple-200">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
-              <span>
-                FunctionGemma 270M is active. The ultra-lightweight ~160 MB model will be cached in your browser on your first query, or you can pre-download it in Settings.
-              </span>
-            </div>
-          </div>
-        )}
 
         {messages.length === 0 ? (
           <div className={`mx-auto text-center ${isSidepanel ? 'max-w-md py-6 px-2' : 'max-w-2xl py-12'}`}>
@@ -750,47 +839,76 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
       {/* Query input area */}
       <div
         className={`border-t border-slate-800/80 bg-slate-900/60 backdrop-blur-sm flex-shrink-0 ${
-          isSidepanel ? 'p-2.5 sm:p-3' : 'p-4'
+          isSidepanel ? 'p-2.5 sm:p-3 space-y-2' : 'p-4 space-y-2.5'
         }`}
       >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSend();
-          }}
-          className={`mx-auto flex items-center gap-2 ${isSidepanel ? 'w-full' : 'max-w-4xl'}`}
-        >
-          <input
-            type="text"
-            placeholder={
-              activeDocTitle
-                ? `Ask about ${activeDocTitle}...`
-                : activeProject
-                ? `Ask about ${activeProject.display_name}...`
-                : 'Ask a question across all solutions...'
-            }
-            value={inputQuery}
-            onChange={(e) => setInputQuery(e.target.value)}
+        <div className={`mx-auto ${isSidepanel ? 'w-full' : 'max-w-4xl'}`}>
+          {/* Quick Action Chips */}
+          <ChatActionChips
+            onSelectCommand={handleSelectChip}
             disabled={isLoading}
-            className={`flex-1 bg-slate-950/80 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition shadow-inner ${
-              isSidepanel ? 'px-3 py-2 text-xs' : 'px-4 py-3 text-sm'
-            }`}
           />
-          <button
-            type="submit"
-            disabled={!inputQuery.trim() || isLoading}
-            className={`bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white rounded-xl font-medium flex items-center gap-1.5 transition shadow-lg shadow-indigo-600/20 flex-shrink-0 ${
-              isSidepanel ? 'px-3.5 py-2 text-xs' : 'px-5 py-3 text-sm'
-            }`}
+        </div>
+
+        <div className={`relative mx-auto ${isSidepanel ? 'w-full' : 'max-w-4xl'}`}>
+          {/* Autocomplete Popover */}
+          {autocompleteState.active && autocompleteState.items.length > 0 && (
+            <CommandAutocompletePopover
+              items={autocompleteState.items}
+              selectedIndex={autocompleteState.selectedIndex}
+              onSelectItem={handleSelectAutocompleteItem}
+              onClose={() => setAutocompleteState((prev) => ({ ...prev, active: false }))}
+              categoryLabel={
+                autocompleteState.prefix
+                  ? `Suggestions for "${autocompleteState.prefix}"`
+                  : 'Slash Commands (Local PGlite Engine)'
+              }
+            />
+          )}
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSend();
+            }}
+            className="flex items-center gap-2"
           >
-            {isLoading ? (
-              <Loader2 className={isSidepanel ? 'w-3.5 h-3.5 animate-spin' : 'w-4 h-4 animate-spin'} />
-            ) : (
-              <Send className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-            )}
-            <span>Send</span>
-          </button>
-        </form>
+            <div className="relative flex-1">
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder={
+                  activeDocTitle
+                    ? `Ask about ${activeDocTitle}, or type / for tools...`
+                    : activeProject
+                    ? `Ask about ${activeProject.display_name}, or type / for tools...`
+                    : 'Ask anything, or type / for local tools (/health, /impact, /er)...'
+                }
+                value={inputQuery}
+                onChange={(e) => setInputQuery(e.target.value)}
+                onKeyDown={handleInputKeyDown}
+                disabled={isLoading}
+                className={`w-full bg-slate-950/80 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition shadow-inner ${
+                  isSidepanel ? 'px-3 py-2 text-xs' : 'px-4 py-3 text-sm'
+                }`}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!inputQuery.trim() || isLoading}
+              className={`bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white rounded-xl font-medium flex items-center gap-1.5 transition shadow-lg shadow-indigo-600/20 flex-shrink-0 ${
+                isSidepanel ? 'px-3.5 py-2 text-xs' : 'px-5 py-3 text-sm'
+              }`}
+            >
+              {isLoading ? (
+                <Loader2 className={isSidepanel ? 'w-3.5 h-3.5 animate-spin' : 'w-4 h-4 animate-spin'} />
+              ) : (
+                <Send className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+              )}
+              <span>Send</span>
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

@@ -98,7 +98,6 @@ async function runOfflineFallback(
 }
 
 import { runGoogleAgentAssistant } from './googleAgentRunner';
-import { runLocalGemmaAgent } from './localGemmaAgentRunner';
 
 /**
  * Executes an autonomous, tool-calling agent run using the OpenAI Agents SDK.
@@ -255,20 +254,6 @@ export async function runAgenticAssistant(
 ): Promise<AgentAnswer> {
   const settings = getAISettings();
   const activeProvider = getActiveAIProvider(settings);
-
-  // If active provider is Local FunctionGemma (WebGPU)
-  if (activeProvider === 'local_gemma') {
-    try {
-      return await runLocalGemmaAgent(query, projectId, conversationHistory, onActivity, onToken);
-    } catch (err: any) {
-      console.warn('Local FunctionGemma Agent execution error. Strictly showing local semantic outputs (NO BYOK):', err);
-      const fallback = await runOfflineFallback(query, projectId, onActivity);
-      return {
-        ...fallback,
-        content: `*(Local FunctionGemma Notice: Direct tool execution was unavailable [${err?.message || err}]. Showing local semantic documentation results below — no remote cloud models were invoked)*\n\n${fallback.content}`,
-      };
-    }
-  }
 
   // If active provider is Google (selected button when both have keys, or only Google key present)
   if (activeProvider === 'google') {
