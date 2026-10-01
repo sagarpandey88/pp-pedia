@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header, AppView } from './components/common/Header';
 import { Dashboard } from './components/dashboard/Dashboard';
-import { MarkdownReader } from './components/reader/MarkdownReader';
+import { MarkdownReader, ALL_DOCS_ID } from './components/reader/MarkdownReader';
 import { ChatAssistant } from './components/chat/ChatAssistant';
 import { SettingsModal } from './components/settings/SettingsModal';
 import {
@@ -76,12 +76,18 @@ export function App() {
     }
   }, []);
 
-  const loadProjectDocs = useCallback(async (projId: string) => {
+  const loadProjectDocs = useCallback(async (projId: string, preferredDocId?: string) => {
     try {
       const docs = await getDocuments(projId);
       setDocuments(docs);
-      if (docs.length > 0) {
-        setActiveDocId(docs[0].id);
+      if (preferredDocId) {
+        setActiveDocId(preferredDocId);
+      } else if (docs.length > 0) {
+        setActiveDocId((prev) => {
+          if (prev === ALL_DOCS_ID) return ALL_DOCS_ID;
+          if (prev && docs.some((d) => d.id === prev)) return prev;
+          return docs[0].id;
+        });
       }
     } catch (err) {
       console.error('Error fetching documents from PGlite:', err);
@@ -274,9 +280,13 @@ export function App() {
     setActiveProjectId(projId);
     getDocuments(projId).then((docs) => {
       setDocuments(docs);
-      const targetDoc = docs.find((d) => d.slug === docSlug);
-      if (targetDoc) {
-        setActiveDocId(targetDoc.id);
+      if (docSlug === 'all' || docSlug === 'combined' || docSlug === ALL_DOCS_ID) {
+        setActiveDocId(ALL_DOCS_ID);
+      } else {
+        const targetDoc = docs.find((d) => d.slug === docSlug);
+        if (targetDoc) {
+          setActiveDocId(targetDoc.id);
+        }
       }
       setCurrentView('reader');
     });

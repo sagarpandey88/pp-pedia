@@ -21,6 +21,12 @@ import {
   Scale,
   Shield,
   Bot,
+  BookOpenCheck,
+  Sparkles,
+  Copy,
+  Check,
+  Printer,
+  ArrowUp,
 } from 'lucide-react';
 import { ProjectRecord, DocumentRecord, DocumentType } from '../../types/db';
 import { MermaidDiagram } from './MermaidDiagram';
@@ -28,9 +34,13 @@ import {
   exportDocsAsZip,
   exportDocsAsSingleMarkdown,
   exportAstJson,
+  buildCombinedMarkdown,
+  slugifyTitle,
 } from '../../services/exporter';
 import { ChatAssistant } from '../chat/ChatAssistant';
 import { ChatMessage } from '../../services/rag/ragService';
+
+export const ALL_DOCS_ID = '__all_docs__';
 
 export interface MarkdownReaderProps {
   project: ProjectRecord;
@@ -43,6 +53,15 @@ export interface MarkdownReaderProps {
   onExpandToFullChat?: () => void;
   chatMessages?: ChatMessage[];
   setChatMessages?: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+}
+
+function getNodeText(node: any): string {
+  if (!node) return '';
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(getNodeText).join('');
+  if (node.props && node.props.children) return getNodeText(node.props.children);
+  return '';
 }
 
 export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
@@ -122,6 +141,10 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
   const handleChatNavigateToDoc = useCallback(
     (projId: string, docSlug: string) => {
       if (projId === project.id) {
+        if (docSlug === 'all' || docSlug === 'combined' || docSlug === ALL_DOCS_ID) {
+          onSelectDoc(ALL_DOCS_ID);
+          return;
+        }
         const match = documents.find((d) => d.slug === docSlug);
         if (match) {
           onSelectDoc(match.id);
@@ -135,8 +158,53 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
     [project.id, documents, onSelectDoc, onNavigateToDoc]
   );
 
-  const activeDoc =
-    documents.find((d) => d.id === activeDocId) || documents[0];
+  const isAllInOne = activeDocId === ALL_DOCS_ID;
+
+  const combinedMarkdown = useMemo(() => {
+    return buildCombinedMarkdown(project, documents);
+  }, [project, documents]);
+
+  const combinedDoc: DocumentRecord = useMemo(
+    () => ({
+      id: ALL_DOCS_ID,
+      project_id: project.id,
+      doc_type: 'index' as DocumentType,
+      title: `${project.display_name} - Complete Solution Handbook`,
+      slug: 'complete-solution-handbook',
+      content_markdown: combinedMarkdown,
+    }),
+    [project.id, project.display_name, combinedMarkdown]
+  );
+
+  const activeDoc = isAllInOne
+    ? combinedDoc
+    : documents.find((d) => d.id === activeDocId) || documents[0];
+
+  const [hasCopiedMarkdown, setHasCopiedMarkdown] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  const handleCopyCombinedMarkdown = useCallback(() => {
+    navigator.clipboard.writeText(combinedMarkdown);
+    setHasCopiedMarkdown(true);
+    setTimeout(() => setHasCopiedMarkdown(false), 2000);
+  }, [combinedMarkdown]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const scrollTop = e.currentTarget.scrollTop;
+    setShowBackToTop(scrollTop > 450);
+  };
+
+  const scrollToTop = () => {
+    contentPaneRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    if (isAllInOne) {
+      document.title = `${project.display_name} - Complete Solution Handbook | pp-pedia`;
+    } else if (activeDoc) {
+      document.title = `${activeDoc.title} | ${project.display_name} | pp-pedia`;
+    }
+  }, [isAllInOne, activeDoc?.title, project.display_name]);
 
   const [showAgentMetadata, setShowAgentMetadata] = useState(false);
 
@@ -382,6 +450,44 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
 
         {/* Documents tree view */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {/* Featured All-in-One Documentation Page for Sidebar AIs */}
+          <div className="mb-2">
+            <button
+              onClick={() => onSelectDoc(ALL_DOCS_ID)}
+              className={`w-full flex items-start gap-2.5 p-2.5 rounded-xl text-left transition group relative overflow-hidden border ${
+                isAllInOne
+                  ? 'bg-gradient-to-r from-indigo-950/80 via-purple-950/60 to-slate-900 text-indigo-200 border-indigo-500/60 shadow-md shadow-indigo-950/50'
+                  : 'bg-slate-950/40 hover:bg-slate-800/60 text-slate-300 border-slate-800/80 hover:border-slate-700'
+              }`}
+            >
+              <div
+                className={`p-1.5 rounded-lg flex-shrink-0 mt-0.5 ${
+                  isAllInOne
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-slate-800 text-indigo-400 group-hover:bg-slate-700'
+                }`}
+              >
+                <BookOpenCheck className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-xs font-semibold truncate text-slate-100 group-hover:text-white">
+                    Full Solution Handbook
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0 flex items-center gap-1">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    AI Ready
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                  Consolidated DOM for Copilot &amp; Sidebar AIs
+                </p>
+              </div>
+            </button>
+          </div>
+
+          <div className="w-full h-px bg-slate-800/70 my-2" />
+
           <div className="flex items-center justify-between px-2 py-1 mb-1">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Modules ({filteredDocs.length})
@@ -542,7 +648,9 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
               </span>
               <ChevronRight className="w-3 h-3 text-slate-600 flex-shrink-0" />
               <span className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold flex-shrink-0">
-                {activeDoc?.doc_type === 'flow'
+                {isAllInOne
+                  ? 'Handbook'
+                  : activeDoc?.doc_type === 'flow'
                   ? 'Cloud Flows'
                   : activeDoc?.doc_type === 'canvas_app'
                   ? 'Canvas Apps'
@@ -610,10 +718,96 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
         </div>
 
         {/* Scrollable markdown body */}
-        <div ref={contentPaneRef} className="flex-1 h-full overflow-y-auto p-6 sm:p-8 lg:p-12">
+        <div
+          ref={contentPaneRef}
+          onScroll={handleScroll}
+          className="flex-1 h-full overflow-y-auto p-6 sm:p-8 lg:p-12 relative"
+        >
           <div className="max-w-4xl mx-auto">
             {activeDoc ? (
               <article className="prose prose-invert prose-slate max-w-none">
+                {isAllInOne && (
+                  <div className="not-prose mb-8 rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 via-slate-900/90 to-purple-950/30 p-5 shadow-xl backdrop-blur-md">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20 flex-shrink-0">
+                          <Sparkles className="w-5 h-5 text-indigo-100" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-bold text-white tracking-tight">
+                              Consolidated Solution Handbook
+                            </h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              Sidebar AI Ready
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            All {documents.length} modules loaded into a single page. Open your browser's AI sidebar (Edge Copilot, Chrome AI) to query this solution.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleCopyCombinedMarkdown}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition border shadow-sm ${
+                            hasCopiedMarkdown
+                              ? 'bg-emerald-600 text-white border-emerald-500'
+                              : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border-slate-700/80 hover:text-white'
+                          }`}
+                          title="Copy full combined markdown to clipboard"
+                        >
+                          {hasCopiedMarkdown ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-white" />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-indigo-400" />
+                              <span>Copy Markdown</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => exportDocsAsSingleMarkdown(project, documents)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 hover:text-white transition shadow-sm"
+                          title="Export consolidated markdown file"
+                        >
+                          <Download className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Export .md</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => window.print()}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 hover:text-white transition shadow-sm"
+                          title="Print or save as PDF"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Print / PDF</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tips for Copilot / Browser AI */}
+                    <div className="mt-3.5 pt-1 text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                      <span className="font-semibold text-slate-300 flex items-center gap-1">
+                        <Bot className="w-3.5 h-3.5 text-indigo-400" />
+                        Sample Copilot prompts:
+                      </span>
+                      <span className="text-slate-400 font-mono text-[10px] bg-slate-950/60 px-2 py-0.5 rounded border border-slate-800 truncate">
+                        "Summarize all cloud flows and their triggers in this solution."
+                      </span>
+                    </div>
+                  </div>
+                )}
                 {rawFrontmatter && (
                   <div
                     className="sr-only"
@@ -652,18 +846,31 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                       return <>{children}</>;
                     },
                     a({ href, children, ...props }: any) {
-                      const isInternal = href && !href.startsWith('http://') && !href.startsWith('https://');
+                      const isInternal = href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('mailto:');
                       return (
                         <a
                           href={href}
                           onClick={(e) => {
                             if (isInternal) {
+                              e.preventDefault();
                               const cleanSlug = href.replace(/^[#/]+/, '');
                               if (!cleanSlug) return;
-                              const target = documents.find((d) => d.slug === cleanSlug || d.id === cleanSlug);
-                              if (target) {
-                                e.preventDefault();
-                                onSelectDoc(target.id);
+
+                              // Check if target anchor exists in current DOM
+                              const targetEl =
+                                document.getElementById(cleanSlug) ||
+                                document.getElementById(`doc-${cleanSlug}`);
+                              if (targetEl) {
+                                targetEl.scrollIntoView({ behavior: 'smooth' });
+                                return;
+                              }
+
+                              // Otherwise find document matching slug/id and switch
+                              const targetDoc = documents.find(
+                                (d) => d.slug === cleanSlug || d.id === cleanSlug
+                              );
+                              if (targetDoc) {
+                                onSelectDoc(targetDoc.id);
                               }
                             }
                           }}
@@ -738,22 +945,25 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                       );
                     },
                     h1({ children }: any) {
+                      const anchor = slugifyTitle(getNodeText(children));
                       return (
-                        <h1 className="text-2xl lg:text-3xl font-bold tracking-tight text-white mb-4 border-b border-slate-800 pb-3">
+                        <h1 id={anchor || undefined} className="text-2xl lg:text-3xl font-bold tracking-tight text-white mb-4 border-b border-slate-800 pb-3 scroll-mt-14">
                           {children}
                         </h1>
                       );
                     },
                     h2({ children }: any) {
+                      const anchor = slugifyTitle(getNodeText(children));
                       return (
-                        <h2 className="text-xl font-bold tracking-tight text-slate-100 mt-8 mb-3 border-b border-slate-800/60 pb-2 flex items-center gap-2">
+                        <h2 id={anchor || undefined} className="text-xl font-bold tracking-tight text-slate-100 mt-8 mb-3 border-b border-slate-800/60 pb-2 flex items-center gap-2 scroll-mt-14">
                           {children}
                         </h2>
                       );
                     },
                     h3({ children }: any) {
+                      const anchor = slugifyTitle(getNodeText(children));
                       return (
-                        <h3 className="text-base font-semibold text-slate-200 mt-6 mb-2">
+                        <h3 id={anchor || undefined} className="text-base font-semibold text-slate-200 mt-6 mb-2 scroll-mt-14">
                           {children}
                         </h3>
                       );
@@ -777,6 +987,17 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                 <FileText className="w-12 h-12 mb-3 text-slate-600" />
                 <p className="text-base font-medium">Select a document from the left navigation</p>
               </div>
+            )}
+            {showBackToTop && (
+              <button
+                type="button"
+                onClick={scrollToTop}
+                className="fixed bottom-6 right-8 lg:right-12 z-30 p-2.5 rounded-full bg-indigo-600/90 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-950/60 backdrop-blur-sm transition-all duration-200 hover:scale-105 border border-indigo-400/40 flex items-center gap-1.5 text-xs font-medium"
+                title="Scroll back to top"
+              >
+                <ArrowUp className="w-4 h-4" />
+                <span className="hidden sm:inline">Top</span>
+              </button>
             )}
           </div>
         </div>

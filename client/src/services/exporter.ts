@@ -70,30 +70,134 @@ export async function exportDocsAsZip(
 }
 
 /**
+ * Helper to slugify titles consistently for anchor links
+ */
+export function slugifyTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Builds the complete consolidated Markdown document for a project,
+ * structured with an AI assistant preamble, solution metadata overview,
+ * interactive table of contents, and clearly demarcated document sections.
+ */
+export function buildCombinedMarkdown(
+  project: ProjectRecord,
+  docs: DocumentRecord[]
+): string {
+  const title = project.display_name || project.unique_name;
+  let markdown = `# ${title} - Complete Solution Architecture & Documentation Handbook
+
+`;
+
+  // AI Assistant Context Notice
+  markdown += `> [!IMPORTANT]
+`;
+  markdown += `> **AI System Reference & Scope Notice**:
+`;
+  markdown += `> This comprehensive document aggregates the entire technical architecture, Dataverse data model, automated Power Automate cloud flows, Canvas applications, Business Rules, Security Roles, client scripts (Web Resources), and environment variables for the Microsoft Power Platform solution **${title}** (\`${project.unique_name}\`, v\`${project.version}\`).
+`;
+  markdown += `> Browser-based AI assistants (such as Microsoft Copilot in the Edge sidebar, Chrome AI sidepanel, or external LLMs) reading this page should use this unified context to accurately answer queries about system entities, relationships, field definitions, trigger events, action logic, security privileges, and dependencies across the entire solution.
+
+`;
+
+  // Solution Metadata Table
+  markdown += `## Solution Specifications
+
+`;
+  markdown += `| Attribute | Specification |
+`;
+  markdown += `| :--- | :--- |
+`;
+  markdown += `| **Display Name** | ${project.display_name} |
+`;
+  markdown += `| **Unique (Schema) Name** | \`${project.unique_name}\` |
+`;
+  markdown += `| **Version** | \`${project.version}\` |
+`;
+  markdown += `| **Package Type** | ${project.is_managed ? 'Managed' : 'Unmanaged'} |
+`;
+  markdown += `| **Publisher** | ${project.publisher_name || 'Standard'} |
+`;
+  if (project.description) {
+    markdown += `| **Description** | ${project.description.replace(/\s+/g, ' ')} |\n`;
+  }
+  if (project.stats) {
+    const stats = project.stats;
+    const statParts: string[] = [];
+    if (stats.entity_count) statParts.push(`${stats.entity_count} Dataverse Tables`);
+    if (stats.flow_count) statParts.push(`${stats.flow_count} Cloud Flows`);
+    if (stats.canvas_app_count) statParts.push(`${stats.canvas_app_count} Canvas Apps`);
+    if (stats.business_rule_count) statParts.push(`${stats.business_rule_count} Business Rules`);
+    if (stats.security_role_count) statParts.push(`${stats.security_role_count} Security Roles`);
+    if (stats.web_resource_count) statParts.push(`${stats.web_resource_count} Web Resources`);
+    if (statParts.length > 0) {
+      markdown += `| **Solution Contents** | ${statParts.join(' • ')} |
+`;
+    }
+  }
+  markdown += `
+---
+
+`;
+
+  // Table of Contents
+  markdown += `<a id="table-of-contents"></a>
+
+`;
+  markdown += `## Table of Contents
+
+`;
+  for (let i = 0; i < docs.length; i++) {
+    const doc = docs[i];
+    const anchor = slugifyTitle(doc.title);
+    markdown += `${i + 1}. [${doc.title}](#${anchor})
+`;
+  }
+
+  markdown += `
+---
+
+`;
+
+  // Sequentially output each document module
+  for (let i = 0; i < docs.length; i++) {
+    const doc = docs[i];
+    const anchor = slugifyTitle(doc.title);
+
+    // Section anchor tag and header divider
+    markdown += `<a id="${anchor}"></a>
+`;
+    markdown += `<div id="doc-${doc.slug}"></div>
+
+`;
+    markdown += `${doc.content_markdown}
+
+`;
+    markdown += `[↑ Back to Table of Contents](#table-of-contents)
+
+`;
+    if (i < docs.length - 1) {
+      markdown += `---
+
+`;
+    }
+  }
+
+  return markdown;
+}
+
+/**
  * Exports all project documentation as a single consolidated Markdown file
  */
 export function exportDocsAsSingleMarkdown(
   project: ProjectRecord,
   docs: DocumentRecord[]
 ): void {
-  let combined = `# ${project.display_name} - Solution Architecture & Documentation\n\n`;
-  combined += `> **Unique Name**: \`${project.unique_name}\` | **Version**: \`${project.version}\` | **Package**: ${
-    project.is_managed ? 'Managed' : 'Unmanaged'
-  } | **Publisher**: ${project.publisher_name || 'Standard'}\n\n`;
-
-  combined += `## Table of Contents\n\n`;
-  for (let i = 0; i < docs.length; i++) {
-    const doc = docs[i];
-    const anchor = doc.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    combined += `${i + 1}. [${doc.title}](#${anchor})\n`;
-  }
-
-  combined += `\n---\n\n`;
-
-  for (const doc of docs) {
-    combined += `${doc.content_markdown}\n\n---\n\n`;
-  }
-
+  const combined = buildCombinedMarkdown(project, docs);
   const blob = new Blob([combined], { type: 'text/markdown;charset=utf-8' });
   downloadBlob(blob, `${project.unique_name}_complete_documentation.md`);
 }
