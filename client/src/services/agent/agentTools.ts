@@ -18,6 +18,7 @@ import {
 } from '../db';
 import { SimilarityResult } from '../../types/db';
 import { AgentExecutionContext, AgentActivityStep } from './agentTypes';
+import { logger } from '../logger';
 
 function extractHeadingSection(markdown: string, headingQuery: string): string {
   const lines = markdown.split('\n');
@@ -78,14 +79,19 @@ function finishStep(
   stepId: string,
   startTime: number,
   outputSummary: string,
-  isError = false
+  isError = false,
+  outputDetails?: string
 ) {
+  const duration = Math.round(performance.now() - startTime);
   if (context) {
     const step = context.steps.find((s) => s.id === stepId);
     if (step) {
       step.status = isError ? 'failed' : 'completed';
       step.outputSummary = outputSummary;
-      step.durationMs = Math.round(performance.now() - startTime);
+      if (outputDetails !== undefined) {
+        step.outputDetails = outputDetails;
+      }
+      step.durationMs = duration;
       context.onActivity?.([...context.steps]);
     }
   }
@@ -638,44 +644,6 @@ export function createAnalyzeColumnImpactTool() {
         else if (jsDeps.length > 0 || flowDeps.some((f) => f.operation_type === 'WRITE')) riskLevel = 'HIGH';
         else if (flowDeps.length > 0 || appDeps.length > 0) riskLevel = 'MEDIUM';
 
-        const result = {
-          entity: cleanEntity,
-          column: cleanCol,
-          risk_level: riskLevel,
-          total_impact_count: totalImpacts,
-          cloud_flows_affected: flowDeps.map((f) => ({
-            flow_name: f.source_name,
-            location: f.location_detail,
-            operation: f.operation_type,
-            snippet: f.context_snippet,
-          })),
-          canvas_apps_affected: appDeps.map((a) => ({
-            app_name: a.source_name,
-            location: a.location_detail,
-            operation: a.operation_type,
-            snippet: a.context_snippet,
-          })),
-          javascript_scripts_affected: jsDeps.map((j) => ({
-            script_name: j.source_name,
-            location: j.location_detail,
-            operation: j.operation_type,
-            snippet: j.context_snippet,
-          })),
-          form_event_handlers_affected: formHandlers.map((h) => ({
-            form_name: h.form_name,
-            event_type: h.event_type,
-            library: h.library_name,
-            handler_function: h.function_name,
-          })),
-          relationships_affected: fkRels.map((r) => ({
-            relationship_type: r.relationship_type,
-            primary_entity: r.primary_entity,
-            referencing_entity: r.referencing_entity,
-            foreign_key: r.referencing_attribute,
-            cascade_delete: r.cascade_delete,
-          })),
-        };
-
         finishStep(
           context,
           stepId,
@@ -683,7 +651,44 @@ export function createAnalyzeColumnImpactTool() {
           `Found ${totalImpacts} dependencies across components (Risk: ${riskLevel})`
         );
 
-        return JSON.stringify(result, null, 2);
+        const reportLines = [
+          `### Blast Radius Analysis: \`${cleanEntity}.${cleanCol}\``,
+          `- **Overall Risk Level**: **${riskLevel}**`,
+          `- **Total Dependencies**: **${totalImpacts}**`,
+          "",
+        ];
+
+        if (totalImpacts === 0) {
+          reportLines.push(`✅ **Safe to Modify/Delete**: No active Cloud Flows, Canvas Apps, JavaScript Scripts, Form Event Handlers, or Foreign Keys reference this column.`);
+        } else {
+          reportLines.push("| Component Type | Name | Operation | Location / Detail |");
+          reportLines.push("| :--- | :--- | :--- | :--- |");
+
+          for (const f of flowDeps) {
+            reportLines.push(`| **Cloud Flow** | ${f.source_name} | ${f.operation_type} | ${f.location_detail || "Action"} |`);
+          }
+          for (const a of appDeps) {
+            reportLines.push(`| **Canvas App** | ${a.source_name} | ${a.operation_type} | ${a.location_detail || "Control / Formula"} |`);
+          }
+          for (const j of jsDeps) {
+            reportLines.push(`| **JavaScript** | ${j.source_name} | ${j.operation_type} | ${j.location_detail || "Script"} |`);
+          }
+          for (const h of formHandlers) {
+            reportLines.push(`| **Form Event** | ${h.form_name} | ${h.event_type} | Function: \`${h.function_name}\` (${h.library_name}) |`);
+          }
+          for (const r of fkRels) {
+            reportLines.push(`| **Foreign Key** | ${r.referencing_entity} $\\rightarrow$ ${r.primary_entity} | RELATION | FK: \`${r.referencing_attribute || "N/A"}\` (Cascade: ${r.cascade_delete || "None"}) |`);
+          }
+
+          reportLines.push("");
+          if (fkRels.length > 0) {
+            reportLines.push(`⚠️ **Architect Warning**: This column is an active Foreign Key. Deleting it will break relationship integrity.`);
+          } else if (flowDeps.some((f) => f.operation_type === "WRITE")) {
+            reportLines.push(`⚠️ **Action Required**: Automated Cloud Flows write to this column. Update or remove the write operations first.`);
+          }
+        }
+
+        return reportLines.join("\n");
       } catch (err: any) {
         finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
         return `Error analyzing column impact: ${err?.message || err}`;
@@ -834,20 +839,37 @@ export function createQueryFlowIntegrationsTool() {
           });
         }
 
-        const formatted = Array.from(flowMap.entries()).map(([flowName, actions]) => ({
-          flow_name: flowName,
-          total_connector_actions: actions.length,
-          actions,
-        }));
+        const totalFlows = flowMap.size;
+        const totalActions = rows.length;
+        const hasPremium = rows.some((r) => r.is_premium);
 
         finishStep(
           context,
           stepId,
           startTime,
-          `Found ${rows.length} connector actions across ${formatted.length} flows`
+          `Found ${totalActions} connector actions across ${totalFlows} flows`
         );
 
-        return JSON.stringify(formatted, null, 2);
+        const flowList = Array.from(flowMap.entries())
+          .map(([flowName, actions]) => {
+            const actionSummaries = actions
+              .map((a) => `\`${a.action}\` (${a.connector}${a.is_premium ? " [Premium]" : ""})`)
+              .join(", ");
+            return `- **${flowName}** (${actions.length} action${actions.length > 1 ? "s" : ""}): ${actionSummaries}`;
+          })
+          .join("\n");
+
+        const summaryMarkdown = [
+          `### Flow Integration Findings for "${connector_filter || "All Connectors"}"`,
+          `- **Total Flows Using Connector**: **${totalFlows} flow${totalFlows > 1 ? "s" : ""}**`,
+          `- **Total Connector Actions**: **${totalActions} action${totalActions > 1 ? "s" : ""}**`,
+          `- **Licensing Requirement**: ${hasPremium ? "**Premium** (Power Automate Standalone license required)" : "**Standard** (Included with Office 365 / Power Apps)"}`,
+          "",
+          "#### Affected Cloud Flows:",
+          flowList,
+        ].join("\n");
+
+        return summaryMarkdown;
       } catch (err: any) {
         finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
         return `Error querying flow integrations: ${err?.message || err}`;
@@ -987,8 +1009,304 @@ export function createAuditHardcodedLiteralsTool() {
   });
 }
 
+export function createCountSolutionComponentsTool() {
+  return tool({
+    name: 'count_solution_components',
+    description:
+      'Provides exact quantitative counts and breakdown of components in the solution. ' +
+      'Use this whenever the user asks "how many" flows, tables, canvas apps, environment variables, or web resources exist.',
+    parameters: z.object({
+      component_type: z
+        .enum(['all', 'flows', 'tables', 'canvas_apps', 'environment_variables', 'web_resources'])
+        .optional()
+        .default('all')
+        .describe('Specific component type to count, or "all" for full breakdown'),
+      projectId: z.string().optional().describe('Optional solution/project ID'),
+    }),
+    execute: async ({ component_type = 'all', projectId }, runContext) => {
+      const context = runContext?.context as AgentExecutionContext | undefined;
+      const targetProjectId = projectId || context?.projectId;
+
+      const { stepId, startTime } = startStep(
+        context,
+        'count_solution_components',
+        `Counting solution components (${component_type})`,
+        { component_type, projectId: targetProjectId }
+      );
+
+      try {
+        const project = targetProjectId ? await getProject(targetProjectId) : (await getProjects())[0];
+        if (!project) {
+          finishStep(context, stepId, startTime, 'No active project found', true);
+          return 'No solution or project found in local database.';
+        }
+
+        const stats = project.stats || {
+          entity_count: 0,
+          flow_count: 0,
+          canvas_app_count: 0,
+          env_var_count: 0,
+          relationship_count: 0,
+          option_set_count: 0,
+          web_resource_count: 0,
+        };
+
+        const solutionName = project.display_name || project.unique_name || 'Power Platform Solution';
+        const lines = [
+          `### Component Counts for "${solutionName}"`,
+          `- **Dataverse Tables (Entities)**: **${stats.entity_count}**`,
+          `- **Cloud Flows**: **${stats.flow_count}**`,
+          `- **Canvas Apps**: **${stats.canvas_app_count}**`,
+          `- **Environment Variables**: **${stats.env_var_count}**`,
+          `- **JavaScript Web Resources**: **${stats.web_resource_count || 0}**`,
+        ];
+
+        finishStep(
+          context,
+          stepId,
+          startTime,
+          `${stats.flow_count} flows, ${stats.entity_count} tables, ${stats.canvas_app_count} apps`
+        );
+
+        return lines.join('\n');
+      } catch (err: any) {
+        finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
+        return `Error counting solution components: ${err?.message || err}`;
+      }
+    },
+  });
+}
+
+export function createFindFlowsByTriggerTool() {
+  return tool({
+    name: 'find_flows_by_trigger',
+    description:
+      'Finds Cloud Flows that trigger on Dataverse table events (Create, Update, Delete) or checks for missing trigger condition filters. ' +
+      'Use this when asking "which flows trigger on Account?", "what flows run when a record is updated?", or "are flows missing trigger filters?".',
+    parameters: z.object({
+      table_name: z.string().optional().describe('Dataverse table name to filter by, e.g. "account", "contact", "invoice"'),
+      missing_filter_only: z.boolean().optional().describe('If true, only returns flows that lack trigger condition filters'),
+      projectId: z.string().optional().describe('Optional solution/project ID'),
+    }),
+    execute: async ({ table_name, missing_filter_only, projectId }, runContext) => {
+      const context = runContext?.context as AgentExecutionContext | undefined;
+      const targetProjectId = projectId || context?.projectId;
+      const cleanTable = table_name ? table_name.toLowerCase().trim() : undefined;
+
+      const { stepId, startTime } = startStep(
+        context,
+        'find_flows_by_trigger',
+        `Finding flow triggers ${cleanTable ? `for "${cleanTable}"` : '(all tables)'}${missing_filter_only ? ' (unfiltered only)' : ''}`,
+        { table_name: cleanTable, missing_filter_only, projectId: targetProjectId }
+      );
+
+      try {
+        const triggers = await queryFlowTriggers(targetProjectId, cleanTable, missing_filter_only);
+
+        if (triggers.length === 0) {
+          finishStep(context, stepId, startTime, '0 triggers found');
+          return `No flow triggers found matching the criteria ${cleanTable ? `for table "${cleanTable}"` : ''}.`;
+        }
+
+        const unfilteredCount = triggers.filter((t) => !t.has_filter).length;
+        const lines = [
+          `### Cloud Flow Triggers ${cleanTable ? `for \`${cleanTable}\`` : ''}`,
+          `- **Total Matching Triggers**: **${triggers.length}**`,
+          `- **Triggers Missing Filter Conditions**: **${unfilteredCount}** ${unfilteredCount > 0 ? '⚠️ *(Risk: potential infinite loops or high execution volume)*' : '✅'}`,
+          '',
+          '| Flow Name | Trigger Type | Event / Scope | Filter Condition |',
+          '| :--- | :--- | :--- | :--- |',
+        ];
+
+        for (const t of triggers) {
+          const filterText = t.has_filter && t.filter_expression ? `\`${t.filter_expression}\`` : '⚠️ *None (Fires on all changes)*';
+          lines.push(`| **${t.flow_name}** | ${t.trigger_type} | ${t.change_type || 'Record Event'} | ${filterText} |`);
+        }
+
+        finishStep(
+          context,
+          stepId,
+          startTime,
+          `Found ${triggers.length} flow triggers (${unfilteredCount} unfiltered)`
+        );
+
+        return lines.join('\n');
+      } catch (err: any) {
+        finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
+        return `Error finding flow triggers: ${err?.message || err}`;
+      }
+    },
+  });
+}
+
+export function createAuditSolutionHealthTool() {
+  return tool({
+    name: 'audit_solution_health',
+    description:
+      'Performs a comprehensive ALM and code quality audit across the solution. ' +
+      'Checks for deprecated Xrm client APIs, direct DOM manipulation, hardcoded URLs/GUIDs, and unfiltered flow triggers.',
+    parameters: z.object({
+      audit_focus: z
+        .enum(['all', 'deprecated_code', 'hardcoded_literals', 'unfiltered_triggers'])
+        .optional()
+        .default('all')
+        .describe('Audit category to focus on, or "all"'),
+      projectId: z.string().optional().describe('Optional solution/project ID'),
+    }),
+    execute: async ({ audit_focus = 'all', projectId }, runContext) => {
+      const context = runContext?.context as AgentExecutionContext | undefined;
+      const targetProjectId = projectId || context?.projectId;
+
+      const { stepId, startTime } = startStep(
+        context,
+        'audit_solution_health',
+        `Auditing solution health (${audit_focus})`,
+        { audit_focus, projectId: targetProjectId }
+      );
+
+      try {
+        const webRes = await queryWebResources(targetProjectId);
+        const deprecatedScripts = webRes.filter((w) => w.uses_deprecated_xrm || w.uses_direct_dom);
+
+        const literals = await queryHardcodedLiterals(targetProjectId);
+        const hardcodedUrls = literals.filter((l) => l.literal_type === 'URL');
+        const hardcodedGuids = literals.filter((l) => l.literal_type === 'GUID');
+
+        const triggers = await queryFlowTriggers(targetProjectId, undefined, true);
+
+        const totalIssues = deprecatedScripts.length + hardcodedUrls.length + hardcodedGuids.length + triggers.length;
+        const score = totalIssues === 0 ? 'A+ (Clean)' : totalIssues <= 3 ? 'B (Good)' : totalIssues <= 7 ? 'C (Needs Review)' : 'D (High Risk)';
+
+        const report = [
+          `### Solution Quality & ALM Health Scorecard`,
+          `- **Overall Health Grade**: **${score}**`,
+          `- **Total Issues Detected**: **${totalIssues}**`,
+          '',
+          '#### 1. Client-Side JavaScript Audit',
+          `- Scripts using deprecated \`Xrm.Page\` APIs: **${webRes.filter((w) => w.uses_deprecated_xrm).length}**`,
+          `- Scripts using unsupported direct DOM manipulation: **${webRes.filter((w) => w.uses_direct_dom).length}**`,
+        ];
+
+        if (deprecatedScripts.length > 0) {
+          for (const s of deprecatedScripts.slice(0, 5)) {
+            report.push(`  - ⚠️ \`${s.name}\`: ${s.uses_deprecated_xrm ? 'Uses deprecated Xrm.Page' : ''} ${s.uses_direct_dom ? 'Uses direct DOM access' : ''}`);
+          }
+        }
+
+        report.push('');
+        report.push('#### 2. Hardcoded Values & Environment Drift');
+        report.push(`- Hardcoded Environment URLs: **${hardcodedUrls.length}** (Should use Environment Variables)`);
+        report.push(`- Hardcoded GUIDs: **${hardcodedGuids.length}**`);
+        if (hardcodedUrls.length > 0) {
+          for (const u of hardcodedUrls.slice(0, 3)) {
+            report.push(`  - \`${u.component_name}\`: \`${u.value}\``);
+          }
+        }
+
+        report.push('');
+        report.push('#### 3. Flow Performance & Trigger Hygiene');
+        report.push(`- Flows lacking trigger filter expressions: **${triggers.length}**`);
+        if (triggers.length > 0) {
+          for (const t of triggers.slice(0, 5)) {
+            report.push(`  - ⚠️ \`${t.flow_name}\` on table \`${t.table_name || 'N/A'}\``);
+          }
+        }
+
+        finishStep(
+          context,
+          stepId,
+          startTime,
+          `Health Grade: ${score} (${totalIssues} issues found)`
+        );
+
+        return report.join('\n');
+      } catch (err: any) {
+        finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
+        return `Error auditing solution health: ${err?.message || err}`;
+      }
+    },
+  });
+}
+
+export function createVisualizeEntityRelationshipsTool() {
+  return tool({
+    name: 'visualize_entity_relationships',
+    description:
+      'Inspects 1:N, N:1, and N:N relationships, foreign keys, and cascading delete behaviors for a Dataverse table, returning an interactive Mermaid ER diagram and summary table.',
+    parameters: z.object({
+      table_name: z.string().describe('Logical or schema name of the Dataverse table, e.g. "account", "contact", "invoice"'),
+      projectId: z.string().optional().describe('Optional solution/project ID'),
+    }),
+    execute: async ({ table_name, projectId }, runContext) => {
+      const context = runContext?.context as AgentExecutionContext | undefined;
+      const targetProjectId = projectId || context?.projectId;
+      const cleanEntity = table_name.toLowerCase().trim();
+
+      const { stepId, startTime } = startStep(
+        context,
+        'visualize_entity_relationships',
+        `Visualizing relationships for table "${cleanEntity}"`,
+        { table_name: cleanEntity, projectId: targetProjectId }
+      );
+
+      try {
+        const rels = await queryEntityRelationshipsFlat(targetProjectId, cleanEntity);
+
+        if (rels.length === 0) {
+          finishStep(context, stepId, startTime, '0 relationships found');
+          return `No relationships found for Dataverse table "${cleanEntity}".`;
+        }
+
+        const mermaidLines = ['```mermaid', 'erDiagram'];
+        const tableSummary = [
+          `### Entity Relationship Model for \`${cleanEntity}\``,
+          `- **Total Relationships**: **${rels.length}**`,
+          '',
+          '| Relationship Type | Primary Entity | Related Entity | Foreign Key | Cascade Delete |',
+          '| :--- | :--- | :--- | :--- | :--- |',
+        ];
+
+        const diagramEdges = new Set<string>();
+
+        for (const r of rels) {
+          const p = r.primary_entity.replace(/[^a-zA-Z0-9_]/g, '');
+          const ref = r.referencing_entity.replace(/[^a-zA-Z0-9_]/g, '');
+          const edgeKey = `${p}_${ref}`;
+
+          if (!diagramEdges.has(edgeKey) && diagramEdges.size < 12) {
+            diagramEdges.add(edgeKey);
+            mermaidLines.push(`    ${p} ||--o{ ${ref} : "${r.referencing_attribute || 'rel'}"`);
+          }
+
+          tableSummary.push(
+            `| ${r.relationship_type || '1:N'} | \`${r.primary_entity}\` | \`${r.referencing_entity}\` | \`${r.referencing_attribute || 'N/A'}\` | ${r.cascade_delete || 'None'} |`
+          );
+        }
+
+        mermaidLines.push('```');
+
+        const combined = [
+          mermaidLines.join('\n'),
+          '',
+          tableSummary.join('\n'),
+        ].join('\n');
+
+        finishStep(context, stepId, startTime, `Found ${rels.length} relationships`);
+        return combined;
+      } catch (err: any) {
+        finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
+        return `Error visualizing entity relationships: ${err?.message || err}`;
+      }
+    },
+  });
+}
+
 export function getAllAgentTools() {
   return [
+    createCountSolutionComponentsTool(),
+    createFindFlowsByTriggerTool(),
+    createAuditSolutionHealthTool(),
+    createVisualizeEntityRelationshipsTool(),
     createAnalyzeColumnImpactTool(),
     createAnalyzeValidationImpactTool(),
     createQueryFlowIntegrationsTool(),
@@ -1005,6 +1323,65 @@ export function getAllAgentTools() {
 }
 
 export const GOOGLE_TOOL_DECLARATIONS = [
+  {
+    name: 'count_solution_components',
+    description:
+      'Provides exact quantitative counts and breakdown of components in the solution. ' +
+      'Use this whenever the user asks "how many" flows, tables, canvas apps, environment variables, or web resources exist.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        component_type: {
+          type: 'string',
+          description: 'Component type to count: "all", "flows", "tables", "canvas_apps", "environment_variables", or "web_resources"',
+        },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+    },
+  },
+  {
+    name: 'find_flows_by_trigger',
+    description:
+      'Finds Cloud Flows that trigger on Dataverse table events (Create, Update, Delete) or checks for missing trigger condition filters. ' +
+      'Use this when asking "which flows trigger on Account?", "what flows run when a record is updated?", or "are flows missing trigger filters?".',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        table_name: { type: 'string', description: 'Dataverse table name to filter by, e.g. "account", "contact", "invoice"' },
+        missing_filter_only: { type: 'boolean', description: 'If true, only returns flows that lack trigger condition filters' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+    },
+  },
+  {
+    name: 'audit_solution_health',
+    description:
+      'Performs a comprehensive ALM and code quality audit across the solution. ' +
+      'Checks for deprecated Xrm client APIs, direct DOM manipulation, hardcoded URLs/GUIDs, and unfiltered flow triggers.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        audit_focus: {
+          type: 'string',
+          description: 'Audit category: "all", "deprecated_code", "hardcoded_literals", or "unfiltered_triggers"',
+        },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+    },
+  },
+  {
+    name: 'visualize_entity_relationships',
+    description:
+      'Inspects 1:N, N:1, and N:N relationships, foreign keys, and cascading delete behaviors for a Dataverse table, returning an interactive Mermaid ER diagram and summary table.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        table_name: { type: 'string', description: 'Logical or schema name of the Dataverse table, e.g. "account", "contact", "invoice"' },
+        projectId: { type: 'string', description: 'Optional solution/project ID' },
+      },
+      required: ['table_name'],
+    },
+  },
   {
     name: 'analyze_column_impact',
     description:
@@ -1173,6 +1550,143 @@ export interface GoogleAgentToolSet {
   executorMap: Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>;
 }
 
+/**
+ * Normalizes tool arguments passed from various agent SDKs or prompt formats
+ * to match the exact schema expected by the underlying tool implementation.
+ */
+export function normalizeToolArgs(toolName: string, rawArgs: any): any {
+  if (!rawArgs || typeof rawArgs !== 'object') return rawArgs;
+  const args = { ...rawArgs };
+
+  if (toolName === 'count_solution_components') {
+    if (!args.component_type && args.type) {
+      args.component_type = args.type;
+    }
+  }
+
+  if (toolName === 'find_flows_by_trigger') {
+    if (!args.table_name && args.table) {
+      args.table_name = args.table;
+    }
+    if (!args.table_name && args.entity_name) {
+      args.table_name = args.entity_name;
+    }
+    if (!args.table_name && args.entity) {
+      args.table_name = args.entity;
+    }
+  }
+
+  if (toolName === 'visualize_entity_relationships') {
+    if (!args.table_name && args.table) {
+      args.table_name = args.table;
+    }
+    if (!args.table_name && args.entity_name) {
+      args.table_name = args.entity_name;
+    }
+    if (!args.table_name && args.entity) {
+      args.table_name = args.entity;
+    }
+  }
+
+  if (toolName === 'audit_solution_health') {
+    if (!args.audit_focus && args.focus) {
+      args.audit_focus = args.focus;
+    }
+    if (!args.audit_focus && args.category) {
+      args.audit_focus = args.category;
+    }
+  }
+
+  if (toolName === 'analyze_column_impact' || toolName === 'analyze_validation_impact') {
+    if (!args.entity_name && args.table_name) {
+      args.entity_name = args.table_name;
+    }
+    if (!args.entity_name && args.table) {
+      args.entity_name = args.table;
+    }
+    if (!args.column_name && args.column) {
+      args.column_name = args.column;
+    }
+  }
+
+  if (toolName === 'query_flow_integrations') {
+    if (!args.connector_filter && args.connector_name) {
+      args.connector_filter = args.connector_name;
+    }
+    if (!args.connector_filter && args.connector_type) {
+      args.connector_filter = args.connector_type;
+    }
+    if (!args.connector_filter && args.connector) {
+      args.connector_filter = args.connector;
+    }
+  }
+
+  if (toolName === 'audit_web_resources') {
+    if (!args.audit_type && args.check_deprecated_only) {
+      args.audit_type = 'deprecated_xrm';
+    }
+  }
+
+  if (toolName === 'read_document_markdown') {
+    if (!args.slug_or_id && args.identifier) {
+      args.slug_or_id = args.identifier;
+    }
+    if (!args.slug_or_id && args.slug) {
+      args.slug_or_id = args.slug;
+    }
+    if (!args.slug_or_id && args.document_id) {
+      args.slug_or_id = args.document_id;
+    }
+    if (!args.section_heading && args.section) {
+      args.section_heading = args.section;
+    }
+  }
+
+  if (toolName === 'inspect_dataverse_entity') {
+    if (!args.entity_name && args.logical_name) {
+      args.entity_name = args.logical_name;
+    }
+    if (!args.entity_name && args.table_name) {
+      args.entity_name = args.table_name;
+    }
+    if (!args.entity_name && args.entity) {
+      args.entity_name = args.entity;
+    }
+  }
+
+  if (toolName === 'inspect_cloud_flow') {
+    if (!args.flow_name && args.flow_name_or_id) {
+      args.flow_name = args.flow_name_or_id;
+    }
+    if (!args.flow_name && args.name) {
+      args.flow_name = args.name;
+    }
+    if (!args.flow_name && args.flow) {
+      args.flow_name = args.flow;
+    }
+  }
+
+  if (toolName === 'inspect_canvas_app') {
+    if (!args.app_name && args.name) {
+      args.app_name = args.name;
+    }
+    if (!args.app_name && args.app) {
+      args.app_name = args.app;
+    }
+  }
+
+  if (toolName === 'semantic_search') {
+    if (!args.query && args.search_term) {
+      args.query = args.search_term;
+    }
+    if (!args.query && args.search_query) {
+      args.query = args.search_query;
+    }
+  }
+
+  return args;
+}
+
 export function getGoogleAgentTools(): GoogleAgentToolSet {
   const tools = getAllAgentTools();
   const executorMap = new Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>();
@@ -1180,8 +1694,19 @@ export function getGoogleAgentTools(): GoogleAgentToolSet {
   for (const t of tools) {
     const toolName = (t as any).name;
     executorMap.set(toolName, async (args, context) => {
-      const inputStr = typeof args === 'string' ? args : JSON.stringify(args ?? {});
-      return (t as any).invoke({ context }, inputStr);
+      const normalizedArgs = normalizeToolArgs(toolName, args);
+      const inputStr = typeof normalizedArgs === 'string' ? normalizedArgs : JSON.stringify(normalizedArgs ?? {});
+      const startTime = performance.now();
+      const result = await (t as any).invoke({ context }, inputStr);
+      const duration = Math.round(performance.now() - startTime);
+      if (context) {
+        const step = [...context.steps].reverse().find((s) => s.toolName === toolName);
+        if (step && !step.outputDetails) {
+          step.outputDetails = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+        }
+      }
+      logger.toolCall(toolName, normalizedArgs, result, duration);
+      return result;
     });
   }
 
@@ -1194,3 +1719,76 @@ export function getGoogleAgentTools(): GoogleAgentToolSet {
     executorMap,
   };
 }
+
+export interface LocalAgentToolSet {
+  tools: Array<{
+    type: 'function';
+    function: {
+      name: string;
+      description: string;
+      parameters: Record<string, unknown>;
+    };
+  }>;
+  executorMap: Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>;
+}
+
+export function getLocalAgentTools(curatedOnly = true): LocalAgentToolSet {
+  const allTools = getAllAgentTools();
+  const executorMap = new Map<string, (args: any, context?: AgentExecutionContext) => Promise<string>>();
+
+  for (const t of allTools) {
+    const toolName = (t as any).name;
+    executorMap.set(toolName, async (args, context) => {
+      const normalizedArgs = normalizeToolArgs(toolName, args);
+      const inputStr = typeof normalizedArgs === 'string' ? normalizedArgs : JSON.stringify(normalizedArgs ?? {});
+      const startTime = performance.now();
+      const result = await (t as any).invoke({ context }, inputStr);
+      const duration = Math.round(performance.now() - startTime);
+      if (context) {
+        const step = [...context.steps].reverse().find((s) => s.toolName === toolName);
+        if (step && !step.outputDetails) {
+          step.outputDetails = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+        }
+      }
+      logger.toolCall(toolName, normalizedArgs, result, duration);
+      return result;
+    });
+  }
+
+  const curatedNames = new Set([
+    'count_solution_components',
+    'find_flows_by_trigger',
+    'audit_solution_health',
+    'visualize_entity_relationships',
+    'analyze_column_impact',
+    'analyze_validation_impact',
+    'query_flow_integrations',
+    'audit_web_resources',
+    'audit_hardcoded_literals',
+    'inspect_dataverse_entity',
+    'inspect_cloud_flow',
+    'inspect_canvas_app',
+    'semantic_search',
+    'read_document_markdown',
+    'list_solutions',
+  ]);
+
+  const sourceDeclarations = curatedOnly
+    ? GOOGLE_TOOL_DECLARATIONS.filter((d) => curatedNames.has(d.name))
+    : GOOGLE_TOOL_DECLARATIONS;
+
+  const tools = sourceDeclarations.map((d) => ({
+    type: 'function' as const,
+    function: {
+      name: d.name,
+      description: d.description,
+      parameters: d.parametersJsonSchema,
+    },
+  }));
+
+  return {
+    tools,
+    executorMap,
+  };
+}
+

@@ -1,5 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { X, Key, Server, Cpu, Database, Trash2, Check, ExternalLink, Sliders } from 'lucide-react';
+import {
+  X,
+  Key,
+  Server,
+  Cpu,
+  Database,
+  Trash2,
+  Check,
+  ExternalLink,
+  Sliders,
+  Sparkles,
+  Zap,
+  HardDrive,
+  CheckCircle2,
+  ShieldCheck,
+  Terminal,
+} from 'lucide-react';
 import { getAISettings, saveAISettings, AISettings } from '../../services/generator/docGenerator';
 import { getDatabaseStats, clearAllData } from '../../services/db';
 import { DatabaseStats } from '../../types/db';
@@ -30,7 +46,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setSettings(getAISettings());
+      const s = getAISettings();
+      setSettings(s);
       getDatabaseStats().then(setDbStats).catch(console.error);
     }
   }, [isOpen]);
@@ -60,64 +77,86 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800 flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center">
-              <Key className="w-4 h-4" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-xl bg-indigo-600/10 text-indigo-400 border border-indigo-500/20">
+              <Sliders className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">Settings & Storage</h3>
-              <p className="text-xs text-slate-400">Configure AI Providers & Local Database</p>
+              <h2 className="text-base font-bold text-white">Application Settings</h2>
+              <p className="text-xs text-slate-400">
+                Configure AI generation providers, local PGlite engine, and storage
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="py-5 space-y-5 overflow-y-auto flex-1 pr-1">
-          {/* Provider Selection */}
+        {/* Content body */}
+        <div className="p-6 overflow-y-auto space-y-6">
+          {/* Provider Selector Tabs */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-2">
-              Agentic AI Provider
+              Default AI Reasoning Engine
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setSettings({ ...settings, provider: 'openai' })}
-                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition ${
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition ${
                   settings.provider === 'openai'
                     ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-sm shadow-indigo-500/10'
                     : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                 }`}
               >
-                <span className="font-semibold text-sm mb-0.5">OpenAI SDK</span>
-                <span className="text-[10px] text-slate-400">@openai/agents</span>
+                <span className="font-semibold text-xs mb-0.5">OpenAI / Compatible</span>
+                <span className="text-[10px] text-slate-400">Agents SDK • BYOK</span>
               </button>
               <button
                 type="button"
                 onClick={() => setSettings({ ...settings, provider: 'google' })}
-                className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-medium transition ${
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition ${
                   settings.provider === 'google'
                     ? 'bg-emerald-600/20 border-emerald-500 text-white shadow-sm shadow-emerald-500/10'
                     : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                 }`}
               >
-                <span className="font-semibold text-sm mb-0.5">Google Agents SDK</span>
-                <span className="text-[10px] text-slate-400">Gemini / @google/genai</span>
+                <span className="font-semibold text-xs mb-0.5">Google Gen AI</span>
+                <span className="text-[10px] text-slate-400">Gemini BYOK</span>
               </button>
             </div>
             <p className="text-[11px] text-slate-500 mt-2">
-              The selected provider is used by default when API keys for both providers are present.
+              {settings.forceLocalAnswers
+                ? 'Forced local mode is active. AI cloud calls are bypassed; responses are powered by PGlite.'
+                : 'The selected provider is used for autonomous agent reasoning and document generation.'}
             </p>
           </div>
 
-          {settings.provider === 'openai' ? (
+          {/* Local PGlite Tools Callout */}
+          <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-indigo-300">
+                <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Local Processing &amp; Slash Commands</span>
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-mono">
+                PGlite WASM • Zero-Cost
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Use slash commands (e.g. <code className="text-indigo-300">/health</code>, <code className="text-indigo-300">/impact</code>, <code className="text-indigo-300">/er</code>, <code className="text-indigo-300">/flows</code>, <code className="text-indigo-300">/triggers</code>) and action chips in the chat box. They run 100% locally against PGlite with sub-millisecond autocomplete and zero API tokens consumed.
+            </p>
+          </div>
+
+          {settings.provider === 'openai' && (
             <>
               {/* OpenAI API Key */}
               <div>
@@ -133,7 +172,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
-                  If left blank, pp-pedia runs in 100% offline mode with full deterministic documentation & local RAG.
+                  If left blank, pp-pedia runs in 100% offline mode with full deterministic documentation &amp; local RAG.
                 </p>
               </div>
 
@@ -203,7 +242,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </p>
               </div>
             </>
-          ) : (
+          )}
+
+          {settings.provider === 'google' && (
             <>
               {/* Google Gemini API Key */}
               <div>
@@ -227,23 +268,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition font-mono"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Obtain a Gemini API key free from Google AI Studio. If blank, pp-pedia runs offline.
+                  Required for Google GenAI / Gemini provider. Get a free API key from Google AI Studio.
                 </p>
               </div>
 
-              {/* Gemini Model Name */}
+              {/* Gemini Model */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <Cpu className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Gemini Model Name</span>
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Gemini Model</span>
                   </span>
                   <span className="text-[10px] text-slate-500 font-normal">Free text / Custom</span>
                 </label>
                 <input
                   type="text"
                   list="gemini-model-suggestions"
-                  placeholder="e.g. gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash"
+                  placeholder="gemini-2.5-flash"
                   value={settings.googleModel}
                   onChange={(e) => setSettings({ ...settings, googleModel: e.target.value })}
                   className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition font-mono"
@@ -282,101 +323,127 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="pt-4 border-t border-slate-800 space-y-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
               <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Offline & Execution Overrides</span>
+              <span>Execution Overrides</span>
             </div>
 
-            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700/80 cursor-pointer transition select-none group">
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={Boolean(settings.forceDeterministicDocs)}
+                checked={settings.forceDeterministicDocs || false}
                 onChange={(e) =>
                   setSettings({ ...settings, forceDeterministicDocs: e.target.checked })
                 }
-                className="mt-0.5 w-4 h-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 bg-slate-900 cursor-pointer"
+                className="mt-0.5 rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500/20"
               />
-              <div className="text-xs">
-                <div className="font-medium text-slate-200 group-hover:text-indigo-300 transition">
-                  Force deterministic documentation generation
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                  Skip LLM API calls during solution ingestion and generate documentation instantly using built-in deterministic AST templates.
-                </div>
+              <div>
+                <span className="text-xs font-medium text-slate-200 block">
+                  Force 100% Deterministic Document Generation
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Bypass LLM API calls during solution ingestion even if keys are provided. Produces instant, standard markdown.
+                </span>
               </div>
             </label>
 
-            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700/80 cursor-pointer transition select-none group">
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={Boolean(settings.forceLocalAnswers)}
+                checked={settings.forceLocalAnswers || false}
                 onChange={(e) =>
                   setSettings({ ...settings, forceLocalAnswers: e.target.checked })
                 }
-                className="mt-0.5 w-4 h-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900 bg-slate-900 cursor-pointer"
+                className="mt-0.5 rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500/20"
               />
-              <div className="text-xs">
-                <div className="font-medium text-slate-200 group-hover:text-indigo-300 transition">
-                  Force local answers
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                  Synthesize chat answers strictly from local vector search chunks without sending queries to OpenAI or external models.
-                </div>
+              <div>
+                <span className="text-xs font-medium text-slate-200 block">
+                  Force Offline Chat Synthesis (Zero-Token Mode)
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Forces all chat queries and tools to execute strictly within local PGlite without sending tokens to cloud APIs.
+                </span>
               </div>
             </label>
           </div>
 
-          {/* Database Stats */}
-          <div className="pt-3 border-t border-slate-800">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-emerald-400" />
-                Local PGlite Vector Storage
+          {/* Database Statistics */}
+          <div className="pt-4 border-t border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                <Database className="w-3.5 h-3.5 text-indigo-400" />
+                <span>PGlite Local Database</span>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                Persistent IndexedDB
               </span>
-              <span className="text-[10px] font-mono text-slate-400">idb://pp_pedia_db</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5 p-3 rounded-xl bg-slate-950/70 border border-slate-850 text-center">
-              <div>
-                <div className="text-sm font-bold text-slate-100">{dbStats?.project_count ?? '-'}</div>
-                <div className="text-[10px] text-slate-500">Solutions</div>
+            {dbStats && (
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-center">
+                  <div className="text-base font-bold text-white font-mono">
+                    {dbStats.project_count}
+                  </div>
+                  <div className="text-[10px] text-slate-400">Solutions</div>
+                </div>
+                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-center">
+                  <div className="text-base font-bold text-white font-mono">
+                    {dbStats.document_count}
+                  </div>
+                  <div className="text-[10px] text-slate-400">Documents</div>
+                </div>
+                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-center">
+                  <div className="text-base font-bold text-indigo-400 font-mono">
+                    {dbStats.chunk_count}
+                  </div>
+                  <div className="text-[10px] text-slate-400">Embeddings</div>
+                </div>
               </div>
-              <div>
-                <div className="text-sm font-bold text-slate-100">{dbStats?.document_count ?? '-'}</div>
-                <div className="text-[10px] text-slate-500">Documents</div>
-              </div>
-              <div>
-                <div className="text-sm font-bold text-indigo-400">{dbStats?.chunk_count ?? '-'}</div>
-                <div className="text-[10px] text-slate-500">Vector Chunks</div>
-              </div>
-            </div>
+            )}
 
-            <button
-              onClick={handleClearAll}
-              className="mt-3 w-full py-1.5 px-3 rounded-lg border border-rose-900/50 bg-rose-950/30 hover:bg-rose-900/40 text-rose-300 text-xs font-medium flex items-center justify-center gap-2 transition"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Clear All Local Database Data</span>
-            </button>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-900/60 bg-rose-950/20 hover:bg-rose-900/30 text-rose-300 text-xs font-medium transition"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Clear All Solutions &amp; Data</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5 transition shadow-lg shadow-indigo-600/20"
-          >
-            {saved ? <Check className="w-3.5 h-3.5" /> : null}
-            <span>{saved ? 'Saved!' : 'Save Settings'}</span>
-          </button>
+        {/* Footer actions */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-900/50">
+          <span className="text-xs text-slate-500 font-mono">
+            {saved ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" />
+                <span>Settings saved successfully!</span>
+              </span>
+            ) : (
+              'Changes are saved locally in your browser'
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition shadow-lg shadow-indigo-600/20 flex items-center gap-1.5"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Save Changes</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 };
-

@@ -4,6 +4,7 @@ import { getGoogleAgentTools } from './agentTools';
 import { AgentAnswer, AgentExecutionContext, AgentActivityStep } from './agentTypes';
 import { TokenUsage } from '../../types/solution';
 import { ChatHistoryItem } from './agentRunner';
+import { logger } from '../logger';
 
 const AGENT_SYSTEM_INSTRUCTION = `You are pp-pedia Agent, an autonomous Microsoft Power Platform expert and solution documentation specialist.
 You analyze Dataverse tables, Power Automate Cloud Flows, Canvas Apps, Environment Variables, JavaScript Web Resources, and solution architectures.
@@ -85,7 +86,10 @@ export async function runGoogleAgentAssistant(
 
   while (turn < maxTurns) {
     turn++;
+    logger.agentCycle('Google Gemini', turn, settings.googleModel || 'gemini-2.5-flash', currentMessage);
+    const cycleStartTime = performance.now();
     const response = await chat.sendMessage({ message: currentMessage });
+    const duration = Math.round(performance.now() - cycleStartTime);
     requests++;
 
     const usageMetadata = response.usageMetadata;
@@ -94,6 +98,17 @@ export async function runGoogleAgentAssistant(
       completionTokens += usageMetadata.candidatesTokenCount ?? 0;
       totalTokens += usageMetadata.totalTokenCount ?? 0;
     }
+
+    logger.llmResponse(
+      'Google Gemini',
+      turn,
+      {
+        text: response.text,
+        functionCalls: response.functionCalls,
+      },
+      usageMetadata,
+      duration
+    );
 
     const functionCalls = response.functionCalls;
     if (!functionCalls || functionCalls.length === 0) {
@@ -147,6 +162,11 @@ export async function runGoogleAgentAssistant(
           requests: Math.max(1, requests),
         }
       : undefined;
+
+  logger.info(
+    'Google Gemini',
+    `Run finished in ${turn} turns with ${context.steps.length} steps and ${context.citations.length} citations.`
+  );
 
   return {
     content: finalAnswer,

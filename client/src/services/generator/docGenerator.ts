@@ -21,6 +21,7 @@ export interface AISettings {
   googleModel: string;
   forceDeterministicDocs?: boolean;
   forceLocalAnswers?: boolean;
+  enableVerboseLogging?: boolean;
 }
 
 export function getAISettings(): AISettings {
@@ -32,8 +33,9 @@ export function getAISettings(): AISettings {
   const googleModel = localStorage.getItem('pp_pedia_google_model') || 'gemini-2.5-flash';
   const forceDeterministicDocs = localStorage.getItem('pp_pedia_force_deterministic_docs') === 'true';
   const forceLocalAnswers = localStorage.getItem('pp_pedia_force_local_answers') === 'true';
+  const enableVerboseLogging = localStorage.getItem('pp_pedia_enable_verbose_logging') === 'true';
 
-  let provider = storedProvider;
+  let provider: AIProvider = storedProvider === 'google' ? 'google' : 'openai';
   if (!localStorage.getItem('pp_pedia_ai_provider')) {
     if (apiKey.length > 5) {
       provider = 'openai';
@@ -51,6 +53,7 @@ export function getAISettings(): AISettings {
     googleModel,
     forceDeterministicDocs,
     forceLocalAnswers,
+    enableVerboseLogging,
   };
 }
 
@@ -63,6 +66,7 @@ export function saveAISettings(settings: AISettings): void {
   localStorage.setItem('pp_pedia_google_model', (settings.googleModel || '').trim());
   localStorage.setItem('pp_pedia_force_deterministic_docs', String(Boolean(settings.forceDeterministicDocs)));
   localStorage.setItem('pp_pedia_force_local_answers', String(Boolean(settings.forceLocalAnswers)));
+  localStorage.setItem('pp_pedia_enable_verbose_logging', String(Boolean(settings.enableVerboseLogging)));
 }
 
 export type ActiveAIProvider = 'openai' | 'google' | 'offline';
@@ -82,7 +86,7 @@ export function getActiveAIProvider(settings: AISettings): ActiveAIProvider {
 
   // If both have keys, user's selected button is the default model
   if (hasOpenAI && hasGoogle) {
-    return settings.provider;
+    return settings.provider === 'google' ? 'google' : 'openai';
   }
 
   // If only one provider has a key configured, use it
@@ -96,6 +100,53 @@ export function getActiveAIProvider(settings: AISettings): ActiveAIProvider {
 
   return 'offline';
 }
+
+export interface ActiveAIInfo {
+  provider: ActiveAIProvider;
+  label: string;
+  subLabel?: string;
+  model: string;
+  badgeStyle: string;
+  hasKey: boolean;
+}
+
+export function getActiveAIInfo(settings: AISettings): ActiveAIInfo {
+  const provider = getActiveAIProvider(settings);
+
+  if (provider === 'google') {
+    const model = settings.googleModel || 'gemini-2.5-flash';
+    return {
+      provider,
+      label: `Gemini ${model.replace(/^gemini-/, '')}`,
+      subLabel: 'BYOK',
+      model,
+      badgeStyle: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:border-emerald-500/60',
+      hasKey: Boolean(settings.googleApiKey && settings.googleApiKey.trim().length > 5),
+    };
+  }
+
+  if (provider === 'openai') {
+    const model = settings.model || 'gpt-4o-mini';
+    return {
+      provider,
+      label: model,
+      subLabel: 'BYOK',
+      model,
+      badgeStyle: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30 hover:border-indigo-500/60',
+      hasKey: Boolean(settings.apiKey && settings.apiKey.trim().length > 5),
+    };
+  }
+
+  return {
+    provider: 'offline',
+    label: 'Local RAG',
+    subLabel: 'Offline',
+    model: 'Deterministic',
+    badgeStyle: 'bg-slate-800/80 text-slate-300 border-slate-700/80 hover:border-slate-600',
+    hasKey: false,
+  };
+}
+
 
 /**
  * Calls OpenAI API (or compatible proxy) to generate documentation,

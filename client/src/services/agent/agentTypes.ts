@@ -8,6 +8,7 @@ export interface AgentActivityStep {
   status: 'running' | 'completed' | 'failed';
   args?: Record<string, unknown>;
   outputSummary?: string;
+  outputDetails?: string;
   durationMs?: number;
 }
 

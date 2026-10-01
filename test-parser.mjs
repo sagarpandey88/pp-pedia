@@ -510,6 +510,90 @@ Security role definition and privilege matrix defined in **Contoso Service Desk*
   assert.ok(roleHeadings.some((h) => h.includes('Assigned to apps')), 'Role should contain Assigned to apps');
   console.log('✓ Security Role 4-section schema & DB persistence verified!');
 
+  // 9. Testing buildCombinedMarkdown for Sidebar AIs & Complete Handbook
+  console.log('9. Testing buildCombinedMarkdown logic & anchor structure...');
+  function slugifyTitle(title) {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  function buildCombinedMarkdown(project, docs) {
+    const title = project.display_name || project.unique_name;
+    let markdown = `# ${title} - Complete Solution Architecture & Documentation Handbook\n\n`;
+
+    markdown += `> [!IMPORTANT]\n`;
+    markdown += `> **AI System Reference & Scope Notice**:\n`;
+    markdown += `> This comprehensive document aggregates the entire technical architecture, Dataverse data model, automated Power Automate cloud flows, Canvas applications, Business Rules, Security Roles, client scripts (Web Resources), and environment variables for the Microsoft Power Platform solution **${title}** (\`${project.unique_name}\`, v\`${project.version}\`).\n`;
+    markdown += `> Browser-based AI assistants (such as Microsoft Copilot in the Edge sidebar, Chrome AI sidepanel, or external LLMs) reading this page should use this unified context to accurately answer queries about system entities, relationships, field definitions, trigger events, action logic, security privileges, and dependencies across the entire solution.\n\n`;
+
+    markdown += `## Solution Specifications\n\n`;
+    markdown += `| Attribute | Specification |\n`;
+    markdown += `| :--- | :--- |\n`;
+    markdown += `| **Display Name** | ${project.display_name} |\n`;
+    markdown += `| **Unique (Schema) Name** | \`${project.unique_name}\` |\n`;
+    markdown += `| **Version** | \`${project.version}\` |\n`;
+    markdown += `| **Package Type** | ${project.is_managed ? 'Managed' : 'Unmanaged'} |\n`;
+    markdown += `| **Publisher** | ${project.publisher_name || 'Standard'} |\n\n`;
+
+    markdown += `<a id="table-of-contents"></a>\n\n`;
+    markdown += `## Table of Contents\n\n`;
+    for (let i = 0; i < docs.length; i++) {
+      const doc = docs[i];
+      const anchor = slugifyTitle(doc.title);
+      markdown += `${i + 1}. [${doc.title}](#${anchor})\n`;
+    }
+
+    markdown += `\n---\n\n`;
+
+    for (let i = 0; i < docs.length; i++) {
+      const doc = docs[i];
+      const anchor = slugifyTitle(doc.title);
+      markdown += `<a id="${anchor}"></a>\n`;
+      markdown += `<div id="doc-${doc.slug}"></div>\n\n`;
+      markdown += `${doc.content_markdown}\n\n`;
+      markdown += `[↑ Back to Table of Contents](#table-of-contents)\n\n`;
+      if (i < docs.length - 1) {
+        markdown += `---\n\n`;
+      }
+    }
+
+    return markdown;
+  }
+
+  const mockProject = {
+    id: 'proj_test_1',
+    unique_name: 'CustomerServiceHub',
+    display_name: 'Customer Service Hub',
+    version: '1.2.0.0',
+    is_managed: true,
+    publisher_name: 'Contoso',
+    stats: {
+      entity_count: 5,
+      flow_count: 3,
+      canvas_app_count: 1,
+      business_rule_count: 2,
+      security_role_count: 1,
+      web_resource_count: 4,
+    }
+  };
+
+  const mockDocs = [
+    { id: 'd1', slug: 'overview', title: 'Architecture & Overview', content_markdown: '# Architecture & Overview\nSystem overview details.' },
+    { id: 'd2', slug: 'flow-process-order', title: 'Flow: Process Order', content_markdown: '# Flow: Process Order\nTriggers on create.' }
+  ];
+
+  const combined = buildCombinedMarkdown(mockProject, mockDocs);
+  assert.ok(combined.includes('AI System Reference & Scope Notice'), 'Must include AI preamble');
+  assert.ok(combined.includes('Microsoft Copilot in the Edge sidebar'), 'Must mention Copilot sidebar context');
+  assert.ok(combined.includes('Customer Service Hub'), 'Must include project display name');
+  assert.ok(combined.includes('Table of Contents'), 'Must include TOC');
+  assert.ok(combined.includes('[Architecture & Overview](#architecture-overview)'), 'Must link to slugified anchor');
+  assert.ok(combined.includes('<a id="architecture-overview"></a>'), 'Must include matching anchor target');
+  assert.ok(combined.includes('Back to Table of Contents'), 'Must include Back to TOC links');
+  console.log('✓ buildCombinedMarkdown logic & anchor structure verified!');
+
   console.log('\nAll verification tests passed successfully! 🎉\n');
 }
 

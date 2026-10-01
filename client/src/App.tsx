@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header, AppView } from './components/common/Header';
 import { Dashboard } from './components/dashboard/Dashboard';
-import { MarkdownReader } from './components/reader/MarkdownReader';
+import { MarkdownReader, ALL_DOCS_ID } from './components/reader/MarkdownReader';
 import { ChatAssistant } from './components/chat/ChatAssistant';
 import { SettingsModal } from './components/settings/SettingsModal';
 import {
@@ -18,7 +18,12 @@ import {
   deleteProject,
 } from './services/db';
 import { unpackAndParseSolution } from './services/parser/solutionParser';
-import { generateDocumentationSuite, getAISettings } from './services/generator/docGenerator';
+import {
+  generateDocumentationSuite,
+  getAISettings,
+  getActiveAIInfo,
+  ActiveAIInfo,
+} from './services/generator/docGenerator';
 import { chunkMarkdown } from './services/chunker';
 import { embedBatch, initEmbeddings } from './services/embeddingService';
 import { ProjectRecord, DocumentRecord, ChunkRecord } from './types/db';
@@ -32,7 +37,7 @@ export function App() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [activeDocId, setActiveDocId] = useState<string | undefined>(undefined);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState(false);
+  const [aiInfo, setAiInfo] = useState<ActiveAIInfo>(() => getActiveAIInfo(getAISettings()));
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   // Ingestion modal state
@@ -49,9 +54,9 @@ export function App() {
     { id: 'db', label: '5. Persist to PGlite (IndexedDB + pgvector)', status: 'pending' },
   ]);
 
-  const checkApiKey = useCallback(() => {
+  const refreshAIInfo = useCallback(() => {
     const s = getAISettings();
-    setHasApiKey(Boolean(s.apiKey && s.apiKey.length > 5));
+    setAiInfo(getActiveAIInfo(s));
   }, []);
 
   const refreshProjects = useCallback(async (preferredActiveId?: string) => {
@@ -71,12 +76,18 @@ export function App() {
     }
   }, []);
 
-  const loadProjectDocs = useCallback(async (projId: string) => {
+  const loadProjectDocs = useCallback(async (projId: string, preferredDocId?: string) => {
     try {
       const docs = await getDocuments(projId);
       setDocuments(docs);
-      if (docs.length > 0) {
-        setActiveDocId(docs[0].id);
+      if (preferredDocId) {
+        setActiveDocId(preferredDocId);
+      } else if (docs.length > 0) {
+        setActiveDocId((prev) => {
+          if (prev === ALL_DOCS_ID) return ALL_DOCS_ID;
+          if (prev && docs.some((d) => d.id === prev)) return prev;
+          return docs[0].id;
+        });
       }
     } catch (err) {
       console.error('Error fetching documents from PGlite:', err);
@@ -85,10 +96,10 @@ export function App() {
 
   useEffect(() => {
     refreshProjects();
-    checkApiKey();
+    refreshAIInfo();
     // Warm up embedding worker in background
     initEmbeddings().catch((err) => console.warn('Pre-warming embedding worker:', err));
-  }, [refreshProjects, checkApiKey]);
+  }, [refreshProjects, refreshAIInfo]);
 
   useEffect(() => {
     if (activeProjectId) {
@@ -269,9 +280,13 @@ export function App() {
     setActiveProjectId(projId);
     getDocuments(projId).then((docs) => {
       setDocuments(docs);
-      const targetDoc = docs.find((d) => d.slug === docSlug);
-      if (targetDoc) {
-        setActiveDocId(targetDoc.id);
+      if (docSlug === 'all' || docSlug === 'combined' || docSlug === ALL_DOCS_ID) {
+        setActiveDocId(ALL_DOCS_ID);
+      } else {
+        const targetDoc = docs.find((d) => d.slug === docSlug);
+        if (targetDoc) {
+          setActiveDocId(targetDoc.id);
+        }
       }
       setCurrentView('reader');
     });
@@ -292,7 +307,7 @@ export function App() {
           loadProjectDocs(id);
         }}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        hasApiKey={hasApiKey}
+        aiInfo={aiInfo}
       />
 
       {/* Main View Area */}
@@ -353,7 +368,7 @@ export function App() {
         isOpen={isSettingsOpen}
         onClose={() => {
           setIsSettingsOpen(false);
-          checkApiKey();
+          refreshAIInfo();
         }}
         onDataCleared={async () => {
           await refreshProjects();
