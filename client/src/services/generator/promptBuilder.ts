@@ -57,43 +57,61 @@ Ensure all 8 headers match this exact format. Output clean tables and concise, i
   return { system, user };
 }
 
-export function buildDataversePrompt(entity: DataverseEntity): { system: string; user: string } {
+export function buildDataversePrompt(target: DataverseEntity | SolutionAST): { system: string; user: string } {
+  const isAst = 'solution' in target && Array.isArray((target as SolutionAST).entities);
+  const ast = isAst ? (target as SolutionAST) : null;
+  const entities: DataverseEntity[] = ast ? ast.entities : [target as DataverseEntity];
+  const solutionName = ast ? ast.solution.display_name : entities[0]?.display_name || 'Solution';
+
   const system = `You are a Microsoft Dataverse Database Architect and Technical Writer.
 Generate thorough, detailed technical documentation for Dataverse tables and schemas.
-Include entity purpose, primary keys, attribute tables with logical names and types, relationship tables with cascading rules, and a clean Mermaid erDiagram representing the entity and its related tables.`;
+Structure your documentation using EXACTLY the following format:
+1. Entity-Relationship Diagram (ERD) using Mermaid (\`\`\`mermaid erDiagram ...)
+2. Section "## 2. Table Specifications", starting immediately with a tabular "### Tables Table of Contents":
+   | Table | Logical Name | Columns | Description / Purpose |
+   With Table Name linking to the table section anchor (e.g. [Table Display Name](#table-anchor)).
+3. For each table, use heading "### Table: <Display Name> (\`<logical_name>\`)", followed by entity metadata, and an "#### Attributes Dictionary" markdown table with EXACT columns:
+   | Attribute Name | Logical Name | Type | Required | Remarks |
+   In the "Remarks" column:
+   - For Lookup attributes: provide a cross-reference link to the target table if it is present in the solution (e.g. "Lookup → [Target Table](#table-target-target)"), or if external/system table format as "Lookup → \`target_entity\` (External/System Table)".
+   - For Choice / OptionSet attributes: list the choices with label and value.
+   - For other attributes: provide description or details (or "-" if none).
+   At the end of each table section, include "[↑ Back to Tables Table of Contents](#tables-table-of-contents)".
+4. Relationships & Foreign Key Mappings
+5. Option Sets / Choice Definitions (if any)`;
 
-  const user = `Document the following Dataverse table:
-Entity Display Name: ${entity.display_name}
-Logical Name: ${entity.logical_name}
-Schema Name: ${entity.schema_name}
-Description: ${entity.description || 'N/A'}
-Primary ID: ${entity.primary_id_attribute}
-Primary Name Attribute: ${entity.primary_name_attribute || 'N/A'}
+  const user = `Document the Microsoft Dataverse data model for: ${solutionName}
 
-Attributes (${entity.attributes.length}):
-${entity.attributes
+Tables (${entities.length}):
+${entities
+  .map(
+    (e) => `### Table: ${e.display_name} (${e.logical_name})
+Schema: ${e.schema_name || e.logical_name}
+Description: ${e.description || 'N/A'}
+Primary ID: ${e.primary_id_attribute || e.logical_name + 'id'}
+Primary Name: ${e.primary_name_attribute || 'N/A'}
+
+Attributes (${e.attributes.length}):
+${e.attributes
   .map(
     (a) =>
       `- ${a.logical_name} (${a.display_name}): Type=${a.type}, Required=${a.required_level || 'None'}, Lookup=${a.lookup_target_entity || 'N/A'}${
-        a.options ? `, Choices=[${a.options.map((o) => o.label).join(', ')}]` : ''
-      }`
+        a.options ? `, Choices=[${a.options.map((o) => `${o.label} (${o.value})`).join(', ')}]` : ''
+      }${a.description ? `, Description: ${a.description}` : ''}`
   )
   .join('\n')}
 
-Relationships (${entity.relationships.length}):
-${entity.relationships
+Relationships (${e.relationships.length}):
+${e.relationships
   .map(
     (r) =>
       `- ${r.schema_name}: ${r.relationship_type} with ${r.primary_entity} -> ${r.referencing_entity} (Key: ${r.referencing_attribute || 'N/A'}, Delete Cascade: ${r.cascade_delete || 'N/A'})`
   )
-  .join('\n')}
+  .join('\n')}`
+  )
+  .join('\n\n')}
 
-Please produce:
-1. Entity Overview & Business Purpose
-2. Mermaid ERD Diagram (\`\`\`mermaid erDiagram ...)
-3. Attribute Dictionary (Markdown table: Display Name, Logical Name, Data Type, Required, Description)
-4. Relationships & Foreign Key Mappings
-5. Option Sets / Choice Definitions`;
+Please produce the complete Dataverse Schema documentation following the 5-point structure specified in system prompt.`;
 
   return { system, user };
 }

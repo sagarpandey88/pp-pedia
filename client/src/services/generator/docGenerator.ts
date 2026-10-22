@@ -1,6 +1,7 @@
 import { SolutionAST, DataverseEntity, CloudFlow, CanvasApp, FlowAction, FlowTrigger, TokenUsage, BusinessRule, SecurityRole } from '../../types/solution';
 import { cleanFlowDisplayName, COMMON_SYSTEM_FIELD_LABELS } from '../parser/solutionParser';
 import { DocumentRecord } from '../../types/db';
+import { slugifyTitle } from '../exporter';
 import { formatConnectionReference, extractConnectorsSummary } from './connectorUtils';
 import {
   buildOverviewPrompt,
@@ -564,6 +565,10 @@ erDiagram
   // Relationships
   let relCount = 0;
   const entitySet = new Set(ast.entities.map((e) => e.logical_name.toLowerCase()));
+  const entityMap = new Map<string, DataverseEntity>();
+  for (const e of ast.entities) {
+    entityMap.set(e.logical_name.toLowerCase(), e);
+  }
   const addedRelKeys = new Set<string>();
 
   for (const entity of ast.entities) {
@@ -618,13 +623,32 @@ erDiagram
 
 ## 2. Table Specifications
 
+### Tables Table of Contents
+
+| Table | Logical Name | Columns | Description / Purpose |
+| :--- | :--- | :--- | :--- |
+${
+  ast.entities.length > 0
+    ? ast.entities
+        .map((entity) => {
+          const tableAnchor = slugifyTitle(`Table: ${entity.display_name} (${entity.logical_name})`);
+          const desc = entity.description
+            ? entity.description.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim()
+            : '*(No description provided)*';
+          return `| [**${entity.display_name}**](#${tableAnchor}) | \`${entity.logical_name}\` | ${entity.attributes.length} | ${desc} |`;
+        })
+        .join('\n')
+    : '| - | - | - | - |\n*(No Dataverse tables defined)*'
+}
+
+---
+
 `;
 
   for (const entity of ast.entities) {
     doc += `### Table: ${entity.display_name} (\`${entity.logical_name}\`)
 
 ${entity.description ? `> ${entity.description}\n` : ''}
-
 - **Logical Name**: \`${entity.logical_name}\`
 - **Schema Name**: \`${entity.schema_name || entity.logical_name}\`
 - **Primary ID Attribute**: \`${entity.primary_id_attribute || entity.logical_name + 'id'}\`
@@ -632,16 +656,35 @@ ${entity.description ? `> ${entity.description}\n` : ''}
 
 #### Attributes Dictionary
 
-| Attribute Name | Logical Name | Type | Required | Lookup Target / Choices |
+| Attribute Name | Logical Name | Type | Required | Remarks |
 | :--- | :--- | :--- | :--- | :--- |
 `;
 
     for (const attr of entity.attributes) {
       let extra = '-';
       if (attr.lookup_target_entity) {
-        extra = `Lookup (\`${attr.lookup_target_entity}\`)`;
+        const targetEntity = entityMap.get(attr.lookup_target_entity.toLowerCase());
+        let lookupText: string;
+        if (targetEntity) {
+          const targetAnchor = slugifyTitle(`Table: ${targetEntity.display_name} (${targetEntity.logical_name})`);
+          lookupText = `Lookup → [${targetEntity.display_name}](#${targetAnchor})`;
+        } else {
+          lookupText = `Lookup → \`${attr.lookup_target_entity}\` (External/System Table)`;
+        }
+        if (attr.description) {
+          const cleanDesc = attr.description.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+          lookupText += ` – ${cleanDesc}`;
+        }
+        extra = lookupText;
       } else if (attr.options && attr.options.length > 0) {
-        extra = attr.options.map((o) => `${o.label} (${o.value})`).join(', ');
+        let choicesText = `Choices: ${attr.options.map((o) => `${o.label} (${o.value})`).join(', ')}`;
+        if (attr.description) {
+          const cleanDesc = attr.description.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+          choicesText += ` – ${cleanDesc}`;
+        }
+        extra = choicesText;
+      } else if (attr.description) {
+        extra = attr.description.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
       }
       doc += `| **${attr.display_name}** | \`${attr.logical_name}\` | \`${attr.type}\` | ${attr.required_level || 'None'} | ${extra} |\n`;
     }
@@ -651,7 +694,11 @@ ${entity.description ? `> ${entity.description}\n` : ''}
       doc += `| Relationship Name | Type | Related Entity | Foreign Key Field | Cascade Delete |\n`;
       doc += `| :--- | :--- | :--- | :--- | :--- |\n`;
       for (const rel of entity.relationships) {
-        doc += `| \`${rel.schema_name}\` | **${rel.relationship_type}** | \`${rel.primary_entity}\` | \`${rel.referencing_attribute || '-'}\` | ${rel.cascade_delete || 'None'} |\n`;
+        const relTarget = entityMap.get(rel.primary_entity.toLowerCase());
+        const relatedEntityDisplay = relTarget
+          ? `[${relTarget.display_name}](#${slugifyTitle(`Table: ${relTarget.display_name} (${relTarget.logical_name})`)})`
+          : `\`${rel.primary_entity}\``;
+        doc += `| \`${rel.schema_name}\` | **${rel.relationship_type}** | ${relatedEntityDisplay} | \`${rel.referencing_attribute || '-'}\` | ${rel.cascade_delete || 'None'} |\n`;
       }
     }
 
@@ -680,7 +727,8 @@ ${entity.description ? `> ${entity.description}\n` : ''}
       }
     }
 
-    doc += `\n---\n\n`;
+    doc += `\n[↑ Back to Tables Table of Contents](#tables-table-of-contents)\n\n`;
+    doc += `---\n\n`;
   }
 
   if (ast.option_sets.length > 0) {
@@ -1585,7 +1633,7 @@ export async function generateDocumentationSuite(
       let dataverseContent: string;
       if (hasKey && ast.entities.length > 0) {
         try {
-          const { system, user } = buildDataversePrompt(ast.entities[0]);
+          const { system, user } = buildDataversePrompt(ast);
           dataverseContent = await callDocAI(system, user, settings, 2, handleTokenUsage);
         } catch (e) {
           console.warn('AI generation error, falling back to deterministic generator:', e);
