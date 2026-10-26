@@ -1,5 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { Upload, FileArchive, Sparkles, Loader2 } from 'lucide-react';
+import {
+  FolderZip24Regular,
+  ArrowUpload20Regular,
+  Sparkle20Filled,
+} from '@fluentui/react-icons';
+import { Button, Spinner } from '@fluentui/react-components';
 import { createSampleSolutionZip } from '../../assets/sampleSolution';
 
 interface UploadZoneProps {
@@ -64,8 +69,8 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
         onDrop={handleDrop}
         className={`relative border-2 border-dashed rounded-2xl p-8 lg:p-10 transition-all text-center flex flex-col items-center justify-center ${
           isDragOver
-            ? 'border-indigo-500 bg-indigo-950/20'
-            : 'border-slate-800 hover:border-slate-700 bg-slate-900/30'
+            ? 'border-purple-500 bg-purple-950/20'
+            : 'border-slate-800 hover:border-slate-700 bg-slate-900/40'
         }`}
       >
         <input
@@ -76,44 +81,42 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
           className="hidden"
         />
 
-        <div className="w-14 h-14 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4">
-          <FileArchive className="w-7 h-7" />
+        <div className="w-14 h-14 rounded-2xl bg-purple-900/20 border border-purple-500/30 flex items-center justify-center text-purple-400 mb-4 shadow-inner">
+          <FolderZip24Regular className="w-7 h-7 text-purple-400" />
         </div>
 
         <h3 className="text-base font-semibold text-slate-100">
           Upload Power Platform Solution
         </h3>
         <p className="text-xs text-slate-400 mt-1 max-w-sm">
-          Drag & drop your exported <code className="text-indigo-300">.zip</code> solution file here, or browse from your computer. Files are processed completely in your browser.
+          Drag &amp; drop your exported <code className="text-purple-300 font-mono">.zip</code> solution file here, or browse from your computer. Files are parsed completely in your browser.
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
-          <button
+          <Button
+            appearance="primary"
+            icon={<ArrowUpload20Regular />}
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessing}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+            size="medium"
           >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Select .ZIP File</span>
-          </button>
+            Select .ZIP Solution
+          </Button>
 
           <span className="text-xs text-slate-500">or</span>
 
-          <button
+          <Button
+            appearance="secondary"
+            icon={isGeneratingSample ? <Spinner size="extra-tiny" /> : <Sparkle20Filled className="text-amber-400" />}
             onClick={handleLoadSample}
             disabled={isProcessing || isGeneratingSample}
-            className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-200 border border-slate-700/80 rounded-xl text-xs font-semibold flex items-center gap-2 transition disabled:opacity-50"
+            size="medium"
           >
-            {isGeneratingSample ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-            ) : (
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            )}
-            <span>Load Sample Solution (Contoso Customer Support)</span>
-          </button>
+            Load Sample Solution (Contoso Customer Support)
+          </Button>
         </div>
 
-        <div className="mt-4 flex items-center gap-4 text-[11px] text-slate-500">
+        <div className="mt-5 flex items-center gap-4 text-[11px] text-slate-500">
           <span>✓ 100% Client-Side Processing</span>
           <span>•</span>
           <span>✓ Zero Remote Uploads</span>
@@ -124,4 +127,3 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
     </div>
   );
 };
-

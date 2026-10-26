@@ -3,24 +3,24 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
 import {
-  Send,
-  Bot,
-  User,
-  Sparkles,
-  Layers,
-  Search,
-  BookOpen,
-  Loader2,
-  Trash2,
-  ChevronDown,
-  Copy,
-  Check,
-  Zap,
-  X,
-  Maximize2,
-  PanelRightOpen,
-  Terminal,
-} from 'lucide-react';
+  Send20Regular,
+  Bot20Regular,
+  Person20Regular,
+  Sparkle20Filled,
+  Layer20Regular,
+  Search20Regular,
+  BookOpen20Regular,
+  Delete20Regular,
+  ChevronDown20Regular,
+  Copy20Regular,
+  Checkmark20Regular,
+  Flash20Regular,
+  Dismiss20Regular,
+  FullScreenMaximize20Regular,
+  PanelRightExpand20Regular,
+  WindowConsole20Regular,
+} from '@fluentui/react-icons';
+import { Spinner } from '@fluentui/react-components';
 import { ProjectRecord, SimilarityResult } from '../../types/db';
 import { TokenUsage } from '../../types/solution';
 import { askRAGAssistant, ChatMessage } from '../../services/rag/ragService';
@@ -66,12 +66,12 @@ const ChatCodeBlock: React.FC<{
         >
           {copied ? (
             <>
-              <Check className="w-3 h-3 text-emerald-400" />
+              <Checkmark20Regular className="w-3 h-3 text-emerald-400" />
               <span className="text-emerald-400">Copied!</span>
             </>
           ) : (
             <>
-              <Copy className="w-3 h-3" />
+              <Copy20Regular className="w-3 h-3" />
               <span>Copy</span>
             </>
           )}
@@ -235,14 +235,14 @@ const CollapsibleCitations: React.FC<CollapsibleCitationsProps> = ({
         className="w-full text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center justify-between py-1 transition group select-none rounded focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
       >
         <span className="flex items-center gap-1.5">
-          <BookOpen className="w-3.5 h-3.5 text-indigo-400 group-hover:text-indigo-300 transition" />
+          <BookOpen20Regular className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300 transition" />
           <span>Source Citations ({citations.length})</span>
         </span>
         <span className="flex items-center gap-1 text-[11px] font-normal text-slate-500 group-hover:text-slate-300">
           <span>{isOpen ? 'Hide' : 'Show'}</span>
-          <ChevronDown
+          <ChevronDown20Regular
             className={`w-3.5 h-3.5 transition-transform duration-200 ${
-              isOpen ? 'rotate-180 text-indigo-400' : ''
+              isOpen ? 'rotate-180 text-purple-400' : ''
             }`}
           />
         </span>
@@ -520,18 +520,18 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
         <div className="flex flex-col border-b border-slate-800/80 bg-slate-900/70 backdrop-blur-sm flex-shrink-0">
           <div className="flex items-center justify-between px-3.5 py-2.5">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex-shrink-0">
-                <Bot className="w-3.5 h-3.5" />
+              <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-purple-900/30 text-purple-400 border border-purple-500/30 flex-shrink-0">
+                <Bot20Regular className="w-4 h-4" />
               </div>
               <div className="min-w-0">
                 <h2 className="text-xs font-semibold text-slate-100 flex items-center gap-1.5 truncate">
-                  <span>PP AI</span>
+                  <span>PP AI Copilot</span>
                   {sessionTokens.totalTokens > 0 && (
                     <span
-                      className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-950 border border-indigo-500/30 text-indigo-300 font-mono flex items-center gap-0.5"
+                      className="text-[10px] px-1.5 py-0.2 rounded bg-purple-950/60 border border-purple-500/30 text-purple-300 font-mono flex items-center gap-0.5"
                       title={`LLM Session: ${sessionTokens.totalTokens.toLocaleString()} tokens (${sessionTokens.promptTokens.toLocaleString()} in / ${sessionTokens.completionTokens.toLocaleString()} out)`}
                     >
-                      <Zap className="w-2.5 h-2.5 text-indigo-400" />
+                      <Flash20Regular className="w-2.5 h-2.5 text-purple-400" />
                       {sessionTokens.totalTokens.toLocaleString()}
                     </span>
                   )}
@@ -547,17 +547,17 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                   className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
                   title="Clear conversation"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Delete20Regular className="w-3.5 h-3.5" />
                 </button>
               )}
               {onExpandToFull && (
                 <button
                   type="button"
                   onClick={onExpandToFull}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-300 hover:bg-slate-800 transition"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-purple-300 hover:bg-slate-800 transition"
                   title="Expand to Full Page Chat"
                 >
-                  <Maximize2 className="w-3.5 h-3.5" />
+                  <FullScreenMaximize20Regular className="w-3.5 h-3.5" />
                 </button>
               )}
               {onClose && (
@@ -567,7 +567,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                   className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
                   title="Close chat sidepanel"
                 >
-                  <X className="w-4 h-4" />
+                  <Dismiss20Regular className="w-4 h-4" />
                 </button>
               )}
             </div>
@@ -576,7 +576,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
           {/* Sub-bar: Scope and active context */}
           <div className="px-3.5 py-1.5 bg-slate-950/40 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400 gap-2">
             <div className="flex items-center gap-1.5 min-w-0 flex-1">
-              <Layers className="w-3 h-3 text-slate-500 flex-shrink-0" />
+              <Layer20Regular className="w-3 h-3 text-slate-500 flex-shrink-0" />
               <span className="text-[10px] text-slate-500 font-medium">Scope:</span>
               <select
                 value={activeProjectId || ''}
@@ -607,12 +607,12 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
       ) : (
         <div className="flex items-center justify-between px-6 py-3 border-b border-slate-800/80 bg-slate-900/50 backdrop-blur-sm">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
-              <Bot className="w-4 h-4" />
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-900/30 text-purple-400 border border-purple-500/30">
+              <Bot20Regular className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-                PP AI
+                PP AI Copilot
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono border ${providerBadge.style}`}>
                   {providerBadge.text}
                 </span>
@@ -627,14 +627,14 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
           <div className="flex items-center gap-3">
             {sessionTokens.totalTokens > 0 && (
               <div
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 text-xs shadow-sm transition-all"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-950/60 border border-purple-500/30 text-purple-300 text-xs shadow-sm transition-all"
                 title={`LLM Session Usage: ${sessionTokens.totalTokens.toLocaleString()} total tokens (${sessionTokens.promptTokens.toLocaleString()} prompt · ${sessionTokens.completionTokens.toLocaleString()} completion across ${sessionTokens.requests || 1} API turns)`}
               >
-                <Zap className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                <Flash20Regular className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
                 <span className="font-semibold text-white font-mono">
                   {sessionTokens.totalTokens.toLocaleString()}
                 </span>
-                <span className="text-[11px] text-indigo-300/80">tokens</span>
+                <span className="text-[11px] text-purple-300/80">tokens</span>
                 <span className="text-[10px] text-slate-400 hidden md:inline border-l border-slate-700/80 pl-1.5 ml-0.5 font-mono">
                   {sessionTokens.promptTokens.toLocaleString()} in / {sessionTokens.completionTokens.toLocaleString()} out
                 </span>
@@ -648,19 +648,19 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700/80 text-xs text-slate-200 transition"
                 title="Dock Chat as Sidepanel in Documentation view"
               >
-                <PanelRightOpen className="w-3.5 h-3.5 text-indigo-400" />
+                <PanelRightExpand20Regular className="w-3.5 h-3.5 text-purple-400" />
                 <span>Dock to Docs</span>
               </button>
             )}
 
             <div className="flex items-center gap-2 text-xs text-slate-400">
-              <Layers className="w-3.5 h-3.5 text-slate-500" />
+              <Layer20Regular className="w-3.5 h-3.5 text-slate-500" />
               <span>Scope:</span>
             </div>
             <select
               value={activeProjectId || ''}
               onChange={(e) => onSelectProject(e.target.value || undefined)}
-              className="px-3 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+              className="px-3 py-1.5 bg-slate-900 border border-slate-700/80 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-purple-500"
             >
               <option value="">All Solutions (Cross-Project Search)</option>
               {projects.map((p) => (
@@ -677,7 +677,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                 className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-900 transition"
                 title="Clear conversation"
               >
-                <Trash2 className="w-4 h-4" />
+                <Delete20Regular className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -690,11 +690,11 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
         {messages.length === 0 ? (
           <div className={`mx-auto text-center ${isSidepanel ? 'max-w-md py-6 px-2' : 'max-w-2xl py-12'}`}>
             <div
-              className={`rounded-2xl bg-indigo-600/15 border border-indigo-500/30 flex items-center justify-center mx-auto mb-3 text-indigo-400 ${
+              className={`rounded-2xl bg-purple-900/30 border border-purple-500/30 flex items-center justify-center mx-auto mb-3 text-purple-400 ${
                 isSidepanel ? 'w-10 h-10' : 'w-14 h-14 mb-4'
               }`}
             >
-              <Sparkles className={isSidepanel ? 'w-5 h-5' : 'w-7 h-7'} />
+              <Sparkle20Filled className={isSidepanel ? 'w-5 h-5 text-purple-400' : 'w-7 h-7 text-purple-400'} />
             </div>
             <h3 className={`font-bold text-slate-100 ${isSidepanel ? 'text-sm' : 'text-lg'}`}>
               Ask anything about your Power Platform Solutions
@@ -715,11 +715,11 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                     key={idx}
                     type="button"
                     onClick={() => handleSend(q)}
-                    className={`text-left rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-850 hover:border-indigo-500/40 text-xs text-slate-300 hover:text-white transition flex items-start gap-2.5 ${
+                    className={`text-left rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-850 hover:border-purple-500/40 text-xs text-slate-300 hover:text-white transition flex items-start gap-2.5 ${
                       isSidepanel ? 'p-2.5 text-[11px]' : 'p-3'
                     }`}
                   >
-                    <Search className="w-3.5 h-3.5 text-indigo-400 mt-0.5 flex-shrink-0" />
+                    <Search20Regular className="w-3.5 h-3.5 text-purple-400 mt-0.5 flex-shrink-0" />
                     <span className="line-clamp-2">{q}</span>
                   </button>
                 ))}
@@ -737,14 +737,14 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
               >
                 {msg.role !== 'user' && (
                   <div
-                    className={`rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                    className={`rounded-lg bg-purple-900/30 border border-purple-500/30 text-purple-400 flex items-center justify-center flex-shrink-0 mt-0.5 ${
                       isSidepanel ? 'w-7 h-7' : 'w-8 h-8'
                     }`}
                   >
                     {msg.role === 'system' ? (
-                      <Sparkles className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                      <Sparkle20Filled className={isSidepanel ? 'w-3.5 h-3.5 text-amber-400' : 'w-4 h-4 text-amber-400'} />
                     ) : (
-                      <Bot className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                      <Bot20Regular className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
                     )}
                   </div>
                 )}
@@ -767,10 +767,10 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {msg.usage && msg.usage.totalTokens > 0 && (
                         <span
-                          className="px-1.5 py-0.5 rounded bg-indigo-950/70 border border-indigo-500/25 text-indigo-300 text-[9px] sm:text-[10px] font-mono flex items-center gap-1"
+                          className="px-1.5 py-0.5 rounded bg-purple-950/70 border border-purple-500/25 text-purple-300 text-[9px] sm:text-[10px] font-mono flex items-center gap-1"
                           title={`Prompt: ${msg.usage.promptTokens.toLocaleString()} · Completion: ${msg.usage.completionTokens.toLocaleString()}`}
                         >
-                          <Zap className="w-2.5 h-2.5 text-indigo-400" />
+                          <Flash20Regular className="w-2.5 h-2.5 text-purple-400" />
                           <span>{msg.usage.totalTokens.toLocaleString()}</span>
                         </span>
                       )}
@@ -799,7 +799,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                       isSidepanel ? 'w-7 h-7' : 'w-8 h-8'
                     }`}
                   >
-                    <User className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                    <Person20Regular className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
                   </div>
                 )}
               </div>
@@ -808,11 +808,11 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
             {isLoading && (
               <div className="flex items-start gap-2.5 sm:gap-3.5 justify-start">
                 <div
-                  className={`rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                  className={`rounded-lg bg-purple-900/30 border border-purple-500/30 text-purple-400 flex items-center justify-center flex-shrink-0 mt-0.5 ${
                     isSidepanel ? 'w-7 h-7' : 'w-8 h-8'
                   }`}
                 >
-                  <Bot className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                  <Bot20Regular className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
                 </div>
                 <div className={`flex-1 min-w-0 ${isSidepanel ? 'max-w-full' : 'max-w-3xl'}`}>
                   {liveSteps.length > 0 && (
@@ -824,7 +824,7 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
                     </div>
                   ) : liveSteps.length === 0 ? (
                     <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none p-3.5 text-xs text-slate-400 flex items-center gap-2.5">
-                      <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin flex-shrink-0" />
+                      <Spinner size="extra-tiny" />
                       <span className="truncate">Agent reasoning & planning tool execution...</span>
                     </div>
                   ) : null}
@@ -896,14 +896,16 @@ export const ChatAssistant: React.FC<ChatAssistantProps> = ({
             <button
               type="submit"
               disabled={!inputQuery.trim() || isLoading}
-              className={`bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white rounded-xl font-medium flex items-center gap-1.5 transition shadow-lg shadow-indigo-600/20 flex-shrink-0 ${
+              className={`bg-power-purple hover:bg-purple-700 disabled:opacity-40 disabled:hover:bg-power-purple text-white rounded-xl font-medium flex items-center gap-1.5 transition shadow-lg shadow-purple-900/30 flex-shrink-0 ${
                 isSidepanel ? 'px-3.5 py-2 text-xs' : 'px-5 py-3 text-sm'
               }`}
             >
               {isLoading ? (
-                <Loader2 className={isSidepanel ? 'w-3.5 h-3.5 animate-spin' : 'w-4 h-4 animate-spin'} />
+                <div className="flex items-center justify-center">
+                  <Spinner size="extra-tiny" />
+                </div>
               ) : (
-                <Send className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+                <Send20Regular className={isSidepanel ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
               )}
               <span>Send</span>
             </button>

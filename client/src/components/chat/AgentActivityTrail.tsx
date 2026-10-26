@@ -1,20 +1,20 @@
 import React, { useState } from 'react';
 import {
-  Search,
-  BookOpen,
-  FileText,
-  Database,
-  Workflow,
-  Layout,
-  Layers,
-  Check,
-  AlertCircle,
-  Loader2,
-  ChevronDown,
-  ChevronRight,
-  Wrench,
-  Terminal,
-} from 'lucide-react';
+  Search20Regular,
+  BookOpen20Regular,
+  DocumentText20Regular,
+  Database20Regular,
+  Flow20Regular,
+  AppGeneric20Regular,
+  Layer20Regular,
+  Checkmark20Regular,
+  ErrorCircle20Regular,
+  ChevronDown20Regular,
+  ChevronRight20Regular,
+  Wrench20Regular,
+  WindowConsole20Regular,
+} from '@fluentui/react-icons';
+import { Spinner } from '@fluentui/react-components';
 import { AgentActivityStep } from '../../services/agent/agentTypes';
 import { logger } from '../../services/logger';
 
@@ -26,21 +26,21 @@ interface AgentActivityTrailProps {
 const getToolIcon = (toolName: string) => {
   switch (toolName) {
     case 'semantic_search':
-      return <Search className="w-3.5 h-3.5 text-indigo-400" />;
+      return <Search20Regular className="w-3.5 h-3.5 text-indigo-400" />;
     case 'list_documents':
-      return <BookOpen className="w-3.5 h-3.5 text-sky-400" />;
+      return <BookOpen20Regular className="w-3.5 h-3.5 text-sky-400" />;
     case 'read_document_markdown':
-      return <FileText className="w-3.5 h-3.5 text-emerald-400" />;
+      return <DocumentText20Regular className="w-3.5 h-3.5 text-emerald-400" />;
     case 'inspect_dataverse_entity':
-      return <Database className="w-3.5 h-3.5 text-amber-400" />;
+      return <Database20Regular className="w-3.5 h-3.5 text-amber-400" />;
     case 'inspect_cloud_flow':
-      return <Workflow className="w-3.5 h-3.5 text-purple-400" />;
+      return <Flow20Regular className="w-3.5 h-3.5 text-purple-400" />;
     case 'inspect_canvas_app':
-      return <Layout className="w-3.5 h-3.5 text-pink-400" />;
+      return <AppGeneric20Regular className="w-3.5 h-3.5 text-pink-400" />;
     case 'list_solutions':
-      return <Layers className="w-3.5 h-3.5 text-cyan-400" />;
+      return <Layer20Regular className="w-3.5 h-3.5 text-cyan-400" />;
     default:
-      return <Wrench className="w-3.5 h-3.5 text-slate-400" />;
+      return <Wrench20Regular className="w-3.5 h-3.5 text-slate-400" />;
   }
 };
 
@@ -78,11 +78,13 @@ export const AgentActivityTrail: React.FC<AgentActivityTrailProps> = ({
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {runningStep ? (
-            <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin flex-shrink-0" />
+            <div className="flex-shrink-0">
+              <Spinner size="extra-tiny" />
+            </div>
           ) : hasErrors ? (
-            <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+            <ErrorCircle20Regular className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
           ) : (
-            <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+            <Checkmark20Regular className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
           )}
           <span className="font-semibold text-slate-200 truncate text-xs">
             {runningStep ? 'Agent Thinking & Tool Execution' : 'Agent Activity Trail'}
@@ -92,21 +94,21 @@ export const AgentActivityTrail: React.FC<AgentActivityTrailProps> = ({
           </span>
           {isVerbose && (
             <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1">
-              <Terminal className="w-2.5 h-2.5" />
+              <WindowConsole20Regular className="w-3 h-3" />
               Verbose
             </span>
           )}
           {runningStep && (
-            <span className="text-[11px] text-indigo-400 animate-pulse font-normal truncate max-w-[120px] hidden sm:inline">
+            <span className="text-[11px] text-purple-400 animate-pulse font-normal truncate max-w-[120px] hidden sm:inline">
               {runningStep.label}...
             </span>
           )}
         </div>
         <div className="flex items-center gap-1 text-[11px] text-slate-400 flex-shrink-0">
           <span>{isExpanded ? 'Hide' : 'Details'}</span>
-          <ChevronDown
+          <ChevronDown20Regular
             className={`w-3.5 h-3.5 transition-transform duration-200 ${
-              isExpanded ? 'rotate-180 text-indigo-400' : ''
+              isExpanded ? 'rotate-180 text-purple-400' : ''
             }`}
           />
         </div>
@@ -141,7 +143,7 @@ export const AgentActivityTrail: React.FC<AgentActivityTrailProps> = ({
                           <span>{step.durationMs}ms</span>
                         )}
                         {step.status === 'running' && (
-                          <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 animate-pulse">
+                          <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 animate-pulse">
                             running
                           </span>
                         )}
@@ -168,11 +170,11 @@ export const AgentActivityTrail: React.FC<AgentActivityTrailProps> = ({
                       <button
                         type="button"
                         onClick={() => toggleStepDetails(stepKey)}
-                        className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-400 hover:text-indigo-300 font-mono transition"
+                        className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-400 hover:text-purple-300 font-mono transition"
                       >
-                        <ChevronRight
+                        <ChevronRight20Regular
                           className={`w-3 h-3 transition-transform ${
-                            isStepExpanded ? 'rotate-90 text-indigo-400' : ''
+                            isStepExpanded ? 'rotate-90 text-purple-400' : ''
                           }`}
                         />
                         <span>{isStepExpanded ? 'Hide payload' : 'Inspect payload & observation'}</span>
@@ -186,7 +188,7 @@ export const AgentActivityTrail: React.FC<AgentActivityTrailProps> = ({
                     {step.args && Object.keys(step.args).length > 0 && (
                       <div>
                         <div className="text-slate-400 font-semibold mb-1">Tool Input Arguments:</div>
-                        <pre className="p-2 rounded bg-slate-950/80 border border-slate-800 text-indigo-300 overflow-x-auto leading-tight">
+                        <pre className="p-2 rounded bg-slate-950/80 border border-slate-800 text-purple-300 overflow-x-auto leading-tight">
                           {JSON.stringify(step.args, null, 2)}
                         </pre>
                       </div>

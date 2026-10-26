@@ -1,14 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  Zap,
-  Database,
-  Columns,
-  Workflow,
-  GitBranch,
-  FileText,
-  Lock,
-  ChevronRight,
-} from 'lucide-react';
+  Flash20Regular,
+  Database20Regular,
+  Column20Regular,
+  Flow20Regular,
+  BranchFork20Regular,
+  DocumentText20Regular,
+  LockClosed20Regular,
+  ChevronRight20Regular,
+} from '@fluentui/react-icons';
 import { AutocompleteItem } from '../../services/autocomplete/pgliteAutocomplete';
 
 export interface CommandAutocompletePopoverProps {
@@ -20,17 +20,17 @@ export interface CommandAutocompletePopoverProps {
 }
 
 const CATEGORY_ICONS: Record<string, React.FC<{ className?: string }>> = {
-  command: Zap,
-  entity: Database,
-  column: Columns,
-  connector: Workflow,
-  flow: GitBranch,
-  doc: FileText,
-  literal: Lock,
+  command: Flash20Regular,
+  entity: Database20Regular,
+  column: Column20Regular,
+  connector: Flow20Regular,
+  flow: BranchFork20Regular,
+  doc: DocumentText20Regular,
+  literal: LockClosed20Regular,
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  command: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
+  command: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
   entity: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
   column: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
   connector: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
@@ -63,7 +63,7 @@ export const CommandAutocompletePopover: React.FC<CommandAutocompletePopoverProp
       {/* Header bar */}
       <div className="flex items-center justify-between px-3.5 py-1.5 bg-slate-950/80 border-b border-slate-800 text-[11px] text-slate-400 font-mono">
         <span className="flex items-center gap-1.5">
-          <Zap className="w-3 h-3 text-indigo-400" />
+          <Flash20Regular className="w-3.5 h-3.5 text-purple-400" />
           <span>{categoryLabel || 'PGlite Autocomplete Suggestions'}</span>
         </span>
         <span className="text-[10px] text-slate-500 flex items-center gap-2">
@@ -84,7 +84,7 @@ export const CommandAutocompletePopover: React.FC<CommandAutocompletePopoverProp
       <div className="overflow-y-auto p-1.5 space-y-0.5 divide-y divide-slate-850/50">
         {items.map((item, idx) => {
           const isSelected = idx === selectedIndex;
-          const IconComp = CATEGORY_ICONS[item.category] || Zap;
+          const IconComp = CATEGORY_ICONS[item.category] || Flash20Regular;
           const badgeColor = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.command;
 
           return (
@@ -95,7 +95,7 @@ export const CommandAutocompletePopover: React.FC<CommandAutocompletePopoverProp
               onClick={() => onSelectItem(item)}
               className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-3 transition text-xs ${
                 isSelected
-                  ? 'bg-indigo-600/25 border border-indigo-500/40 text-white shadow-sm'
+                  ? 'bg-purple-950/40 border border-purple-500/40 text-white shadow-sm'
                   : 'hover:bg-slate-800/60 text-slate-300 border border-transparent'
               }`}
             >
@@ -126,9 +126,9 @@ export const CommandAutocompletePopover: React.FC<CommandAutocompletePopoverProp
                 </div>
               </div>
 
-              <ChevronRight
+              <ChevronRight20Regular
                 className={`w-3.5 h-3.5 flex-shrink-0 transition-opacity ${
-                  isSelected ? 'opacity-100 text-indigo-400' : 'opacity-0'
+                  isSelected ? 'opacity-100 text-purple-400' : 'opacity-0'
                 }`}
               />
             </button>
