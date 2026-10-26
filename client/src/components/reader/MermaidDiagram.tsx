@@ -1,15 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import {
-  Copy,
-  Check,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  AlertTriangle,
-  Maximize2,
-  Minimize2,
-} from 'lucide-react';
+  Copy20Regular,
+  Checkmark20Regular,
+  ZoomIn20Regular,
+  ZoomOut20Regular,
+  ArrowReset20Regular,
+  Warning20Regular,
+  FullScreenMaximize20Regular,
+  FullScreenMinimize20Regular,
+} from '@fluentui/react-icons';
+import { Tooltip, Button } from '@fluentui/react-components';
 
 interface MermaidDiagramProps {
   chart: string;
@@ -33,13 +34,13 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
         startOnLoad: false,
         theme: 'dark',
         securityLevel: 'loose',
-        fontFamily: 'Inter, system-ui, sans-serif',
+        fontFamily: "'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif",
         themeVariables: {
           darkMode: true,
           background: '#0f172a',
-          primaryColor: '#4f46e5',
+          primaryColor: '#742774',
           primaryTextColor: '#f8fafc',
-          primaryBorderColor: '#6366f1',
+          primaryBorderColor: '#893289',
           lineColor: '#94a3b8',
           secondaryColor: '#1e293b',
           tertiaryColor: '#090d16',
@@ -122,11 +123,11 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
   const renderToolbar = (fullscreenMode = false) => (
     <div className="flex items-center justify-between px-4 py-2 bg-slate-900/95 border-b border-slate-800 text-xs text-slate-400 select-none">
       <div className="flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+        <span className="w-2 h-2 rounded-full bg-purple-500"></span>
         <span className="font-semibold text-slate-200">
           {fullscreenMode ? 'Full Screen Diagram Viewer' : 'Mermaid Diagram'}
         </span>
-        <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-indigo-300 font-mono">
+        <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-purple-300 font-mono">
           {Math.round(scale * 100)}%
         </span>
         {intrinsicWidth && (
@@ -136,35 +137,40 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
         )}
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <button
-          onClick={handleZoomIn}
-          className="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white transition"
-          title="Zoom In"
-        >
-          <ZoomIn className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={handleZoomOut}
-          className="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white transition"
-          title="Zoom Out"
-        >
-          <ZoomOut className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={handleReset}
-          className="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white transition"
-          title="Reset Zoom (100%)"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-        </button>
+      <div className="flex items-center gap-1">
+        <Tooltip content="Zoom In" relationship="label">
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={<ZoomIn20Regular />}
+            onClick={handleZoomIn}
+          />
+        </Tooltip>
+
+        <Tooltip content="Zoom Out" relationship="label">
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={<ZoomOut20Regular />}
+            onClick={handleZoomOut}
+          />
+        </Tooltip>
+
+        <Tooltip content="Reset Zoom (100%)" relationship="label">
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={<ArrowReset20Regular />}
+            onClick={handleReset}
+          />
+        </Tooltip>
 
         {intrinsicWidth && (
           <button
             onClick={toggleMode}
             className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
               mode === 'actual'
-                ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
+                ? 'bg-purple-900/40 text-purple-300 border border-purple-500/40'
                 : 'hover:bg-slate-800 text-slate-400 hover:text-slate-200'
             }`}
             title={mode === 'actual' ? 'Switch to Fit Width' : 'Switch to 100% Native Size'}
@@ -175,14 +181,14 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
 
         <div className="w-px h-3 bg-slate-700 mx-1" />
 
-        <button
+        <Button
+          appearance="subtle"
+          size="small"
+          icon={fullscreenMode ? <FullScreenMinimize20Regular className="text-purple-400" /> : <FullScreenMaximize20Regular />}
           onClick={() => setIsFullscreen(!fullscreenMode)}
-          className="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white transition flex items-center gap-1 text-[11px]"
-          title={fullscreenMode ? 'Exit Full Screen (Esc)' : 'Open Full Screen'}
         >
-          {fullscreenMode ? <Minimize2 className="w-3.5 h-3.5 text-indigo-400" /> : <Maximize2 className="w-3.5 h-3.5" />}
-          <span className="hidden sm:inline">{fullscreenMode ? 'Exit Fullscreen' : 'Fullscreen'}</span>
-        </button>
+          <span className="hidden sm:inline text-xs">{fullscreenMode ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+        </Button>
 
         <button
           onClick={() => setShowRaw(!showRaw)}
@@ -191,13 +197,14 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
           {showRaw ? 'View Diagram' : 'View Code'}
         </button>
 
-        <button
-          onClick={handleCopy}
-          className="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white transition"
-          title="Copy Mermaid syntax"
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-        </button>
+        <Tooltip content="Copy Mermaid syntax" relationship="label">
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={copied ? <Checkmark20Regular className="text-emerald-400" /> : <Copy20Regular />}
+            onClick={handleCopy}
+          />
+        </Tooltip>
       </div>
     </div>
   );
@@ -214,12 +221,12 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ chart }) => {
     if (error) {
       return (
         <div className="flex flex-col items-center justify-center p-6 text-center text-amber-400">
-          <AlertTriangle className="w-6 h-6 mb-2" />
+          <Warning20Regular className="w-6 h-6 mb-2" />
           <p className="text-sm font-medium">Diagram Syntax Error</p>
           <p className="text-xs text-slate-500 mt-1 max-w-md font-mono">{error}</p>
           <button
             onClick={() => setShowRaw(true)}
-            className="mt-3 text-xs underline text-indigo-400 hover:text-indigo-300"
+            className="mt-3 text-xs underline text-purple-400 hover:text-purple-300"
           >
             View source syntax
           </button>

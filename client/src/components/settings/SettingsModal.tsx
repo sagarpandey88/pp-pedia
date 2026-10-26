@@ -1,21 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import {
-  X,
-  Key,
-  Server,
-  Cpu,
-  Database,
-  Trash2,
-  Check,
-  ExternalLink,
-  Sliders,
-  Sparkles,
-  Zap,
-  HardDrive,
-  CheckCircle2,
-  ShieldCheck,
-  Terminal,
-} from 'lucide-react';
+  Dismiss20Regular,
+  Server20Regular,
+  DeveloperBoard20Regular,
+  Database20Regular,
+  Delete20Regular,
+  Checkmark20Regular,
+  Open20Regular,
+  SlideSettings20Regular,
+  Sparkle20Filled,
+  Flash20Regular,
+} from '@fluentui/react-icons';
+import { Button } from '@fluentui/react-components';
 import { getAISettings, saveAISettings, AISettings } from '../../services/generator/docGenerator';
 import { getDatabaseStats, clearAllData } from '../../services/db';
 import { DatabaseStats } from '../../types/db';
@@ -82,8 +78,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-indigo-600/10 text-indigo-400 border border-indigo-500/20">
-              <Sliders className="w-5 h-5" />
+            <div className="p-2 rounded-xl bg-purple-900/30 text-purple-400 border border-purple-500/20">
+              <SlideSettings20Regular className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-base font-bold text-white">Application Settings</h2>
@@ -96,7 +92,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
           >
-            <X className="w-5 h-5" />
+            <Dismiss20Regular className="w-5 h-5" />
           </button>
         </div>
 
@@ -113,7 +109,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 onClick={() => setSettings({ ...settings, provider: 'openai' })}
                 className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-xs font-medium transition ${
                   settings.provider === 'openai'
-                    ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-sm shadow-indigo-500/10'
+                    ? 'bg-purple-900/30 border-purple-500 text-white shadow-sm shadow-purple-900/20'
                     : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                 }`}
               >
@@ -143,16 +139,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Local PGlite Tools Callout */}
           <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-indigo-300">
-                <Zap className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-purple-300">
+                <Flash20Regular className="w-3.5 h-3.5 text-purple-400" />
                 <span>Local Processing &amp; Slash Commands</span>
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 font-mono">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 font-mono">
                 PGlite WASM • Zero-Cost
               </span>
             </div>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Use slash commands (e.g. <code className="text-indigo-300">/health</code>, <code className="text-indigo-300">/impact</code>, <code className="text-indigo-300">/er</code>, <code className="text-indigo-300">/flows</code>, <code className="text-indigo-300">/triggers</code>) and action chips in the chat box. They run 100% locally against PGlite with sub-millisecond autocomplete and zero API tokens consumed.
+              Use slash commands (e.g. <code className="text-purple-300">/health</code>, <code className="text-purple-300">/impact</code>, <code className="text-purple-300">/er</code>, <code className="text-purple-300">/flows</code>, <code className="text-purple-300">/triggers</code>) and action chips in the chat box. They run 100% locally against PGlite with sub-millisecond autocomplete and zero API tokens consumed.
             </p>
           </div>
 
@@ -169,7 +165,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   placeholder="sk-proj-..."
                   value={settings.apiKey}
                   onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
+                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-purple-500 transition font-mono"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
                   If left blank, pp-pedia runs in 100% offline mode with full deterministic documentation &amp; local RAG.
@@ -179,7 +175,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* Base URL */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                  <Server className="w-3.5 h-3.5 text-indigo-400" />
+                  <Server20Regular className="w-3.5 h-3.5 text-purple-400" />
                   <span>API Base URL</span>
                 </label>
                 <input
@@ -187,7 +183,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   placeholder="https://api.openai.com/v1"
                   value={settings.baseUrl}
                   onChange={(e) => setSettings({ ...settings, baseUrl: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
+                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-purple-500 transition font-mono"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">
                   Use default for OpenAI, or configure for Azure OpenAI, Ollama, OpenRouter, or local proxies.
@@ -198,7 +194,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+                    <DeveloperBoard20Regular className="w-3.5 h-3.5 text-purple-400" />
                     <span>Model Name</span>
                   </span>
                   <span className="text-[10px] text-slate-500 font-normal">Free text / Custom</span>
@@ -209,7 +205,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   placeholder="e.g. gpt-4o-mini, gpt-4o, llama3, deepseek-chat"
                   value={settings.model}
                   onChange={(e) => setSettings({ ...settings, model: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition font-mono"
+                  className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-purple-500 transition font-mono"
                 />
                 <datalist id="model-suggestions">
                   <option value="gpt-4o-mini" />
@@ -229,7 +225,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClick={() => setSettings({ ...settings, model: preset })}
                       className={`text-[10px] px-2 py-0.5 rounded-md font-mono border transition ${
                         settings.model === preset
-                          ? 'bg-indigo-600/30 text-indigo-300 border-indigo-500/50'
+                          ? 'bg-purple-900/30 text-purple-300 border-purple-500/50'
                           : 'bg-slate-800/60 text-slate-400 border-slate-750 hover:text-slate-200 hover:border-slate-600'
                       }`}
                     >
@@ -257,7 +253,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1"
                   >
                     <span>Get key</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
+                    <Open20Regular className="w-3 h-3" />
                   </a>
                 </label>
                 <input
@@ -276,7 +272,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                    <Sparkle20Filled className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Gemini Model</span>
                   </span>
                   <span className="text-[10px] text-slate-500 font-normal">Free text / Custom</span>
@@ -322,7 +318,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Execution Overrides */}
           <div className="pt-4 border-t border-slate-800 space-y-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-              <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+              <SlideSettings20Regular className="w-3.5 h-3.5 text-purple-400" />
               <span>Execution Overrides</span>
             </div>
 
@@ -333,7 +329,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 onChange={(e) =>
                   setSettings({ ...settings, forceDeterministicDocs: e.target.checked })
                 }
-                className="mt-0.5 rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500/20"
+                className="mt-0.5 rounded bg-slate-950 border-slate-800 text-purple-600 focus:ring-purple-500/20"
               />
               <div>
                 <span className="text-xs font-medium text-slate-200 block">
@@ -352,7 +348,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 onChange={(e) =>
                   setSettings({ ...settings, forceLocalAnswers: e.target.checked })
                 }
-                className="mt-0.5 rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500/20"
+                className="mt-0.5 rounded bg-slate-950 border-slate-800 text-purple-600 focus:ring-purple-500/20"
               />
               <div>
                 <span className="text-xs font-medium text-slate-200 block">
@@ -369,7 +365,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="pt-4 border-t border-slate-800 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                <Database className="w-3.5 h-3.5 text-indigo-400" />
+                <Database20Regular className="w-3.5 h-3.5 text-purple-400" />
                 <span>PGlite Local Database</span>
               </div>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
@@ -392,7 +388,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="text-[10px] text-slate-400">Documents</div>
                 </div>
                 <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800 text-center">
-                  <div className="text-base font-bold text-indigo-400 font-mono">
+                  <div className="text-base font-bold text-purple-400 font-mono">
                     {dbStats.chunk_count}
                   </div>
                   <div className="text-[10px] text-slate-400">Embeddings</div>
@@ -401,14 +397,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
 
             <div className="pt-2">
-              <button
-                type="button"
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<Delete20Regular className="text-rose-400" />}
                 onClick={handleClearAll}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-900/60 bg-rose-950/20 hover:bg-rose-900/30 text-rose-300 text-xs font-medium transition"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Clear All Solutions &amp; Data</span>
-              </button>
+                <span className="text-rose-300 text-xs">Clear All Solutions &amp; Data</span>
+              </Button>
             </div>
           </div>
         </div>
@@ -418,7 +414,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <span className="text-xs text-slate-500 font-mono">
             {saved ? (
               <span className="text-emerald-400 flex items-center gap-1">
-                <Check className="w-3.5 h-3.5" />
+                <Checkmark20Regular className="w-3.5 h-3.5" />
                 <span>Settings saved successfully!</span>
               </span>
             ) : (
@@ -426,21 +422,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
           </span>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              appearance="secondary"
+              size="medium"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
             >
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              appearance="primary"
+              size="medium"
+              icon={<Checkmark20Regular />}
               onClick={handleSave}
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition shadow-lg shadow-indigo-600/20 flex items-center gap-1.5"
             >
-              <Check className="w-3.5 h-3.5" />
-              <span>Save Changes</span>
-            </button>
+              Save Changes
+            </Button>
           </div>
         </div>
       </div>

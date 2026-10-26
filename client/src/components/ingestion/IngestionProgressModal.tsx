@@ -1,5 +1,11 @@
 import React from 'react';
-import { CheckCircle2, Circle, Loader2, AlertCircle, Zap } from 'lucide-react';
+import {
+  CheckmarkCircle20Filled,
+  Circle20Regular,
+  ErrorCircle20Filled,
+  Flash20Regular,
+} from '@fluentui/react-icons';
+import { ProgressBar, Spinner, Button } from '@fluentui/react-components';
 import { TokenUsage } from '../../types/solution';
 
 export interface IngestionStep {
@@ -44,22 +50,17 @@ export const IngestionProgressModal: React.FC<IngestionProgressModalProps> = ({
               ? 'Solution Ingested Successfully!'
               : 'Processing Solution Archive...'}
           </h3>
-          <span className="text-xs font-mono text-indigo-400 font-semibold">
+          <span className="text-xs font-mono text-purple-400 font-semibold">
             {overallProgress}%
           </span>
         </div>
 
-        {/* Progress Bar */}
-        <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden mb-6">
-          <div
-            className={`h-full transition-all duration-300 ${
-              hasError
-                ? 'bg-rose-500'
-                : isComplete
-                ? 'bg-emerald-500'
-                : 'bg-indigo-500'
-            }`}
-            style={{ width: `${overallProgress}%` }}
+        {/* Fluent Progress Bar */}
+        <div className="mb-6">
+          <ProgressBar
+            value={overallProgress / 100}
+            color={hasError ? 'error' : isComplete ? 'success' : 'brand'}
+            thickness="medium"
           />
         </div>
 
@@ -76,23 +77,25 @@ export const IngestionProgressModal: React.FC<IngestionProgressModalProps> = ({
               className="flex items-start gap-3 text-xs"
             >
               {step.status === 'completed' && (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                <CheckmarkCircle20Filled className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
               )}
               {step.status === 'in_progress' && (
-                <Loader2 className="w-4 h-4 text-indigo-400 animate-spin mt-0.5 flex-shrink-0" />
+                <div className="mt-0.5 flex-shrink-0">
+                  <Spinner size="extra-tiny" />
+                </div>
               )}
               {step.status === 'pending' && (
-                <Circle className="w-4 h-4 text-slate-600 mt-0.5 flex-shrink-0" />
+                <Circle20Regular className="w-4 h-4 text-slate-600 mt-0.5 flex-shrink-0" />
               )}
               {step.status === 'error' && (
-                <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 flex-shrink-0" />
+                <ErrorCircle20Filled className="w-4 h-4 text-rose-400 mt-0.5 flex-shrink-0" />
               )}
 
               <div className="flex-1 min-w-0">
                 <div
                   className={`font-medium ${
                     step.status === 'in_progress'
-                      ? 'text-indigo-300'
+                      ? 'text-purple-300'
                       : step.status === 'completed'
                       ? 'text-slate-200'
                       : 'text-slate-500'
@@ -112,9 +115,9 @@ export const IngestionProgressModal: React.FC<IngestionProgressModalProps> = ({
 
         {/* Token Usage metrics if LLM was used */}
         {tokenUsage && tokenUsage.totalTokens > 0 && (
-          <div className="mb-6 p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2 text-indigo-300 font-medium">
-              <Zap className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+          <div className="mb-6 p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 text-purple-300 font-medium">
+              <Flash20Regular className="w-4 h-4 text-purple-400 flex-shrink-0" />
               <span>LLM Token Usage</span>
             </div>
             <div className="flex items-center gap-2 font-mono text-slate-300">
@@ -133,15 +136,16 @@ export const IngestionProgressModal: React.FC<IngestionProgressModalProps> = ({
         )}
 
         {(isComplete || hasError) && (
-          <button
+          <Button
+            appearance="primary"
             onClick={onClose}
-            className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition"
+            className="w-full"
+            size="large"
           >
             {isComplete ? 'View Documentation' : 'Dismiss'}
-          </button>
+          </Button>
         )}
       </div>
     </div>
   );
 };
-

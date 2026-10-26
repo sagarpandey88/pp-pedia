@@ -3,31 +3,31 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
 import {
-  FileText,
-  Database,
-  Workflow,
-  Layout,
-  Sliders,
-  Download,
-  Search,
-  ChevronRight,
-  ChevronDown,
-  Archive,
-  FileCode,
-  Layers,
-  PanelLeftClose,
-  PanelLeft,
-  MessageSquare,
-  Scale,
-  Shield,
-  Bot,
-  BookOpenCheck,
-  Sparkles,
-  Copy,
-  Check,
-  Printer,
-  ArrowUp,
-} from 'lucide-react';
+  DocumentText20Regular,
+  Database20Regular,
+  Flow20Regular,
+  AppGeneric20Regular,
+  SlideSettings20Regular,
+  ArrowDownload20Regular,
+  Search20Regular,
+  ChevronRight20Regular,
+  ChevronDown20Regular,
+  FolderZip20Regular,
+  Code20Regular,
+  Layer20Regular,
+  PanelLeftContract20Regular,
+  PanelLeft20Regular,
+  Chat20Regular,
+  Scales20Regular,
+  Shield20Regular,
+  Bot20Regular,
+  DocumentCheckmark20Regular,
+  Sparkle20Filled,
+  Copy20Regular,
+  Checkmark20Regular,
+  Print20Regular,
+  ArrowUp20Regular,
+} from '@fluentui/react-icons';
 import { ProjectRecord, DocumentRecord, DocumentType } from '../../types/db';
 import { MermaidDiagram } from './MermaidDiagram';
 import {
@@ -268,21 +268,21 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
   const getDocIcon = (type: DocumentType) => {
     switch (type) {
       case 'overview':
-        return <Layers className="w-4 h-4 text-indigo-400 flex-shrink-0" />;
+        return <Layer20Regular className="w-4 h-4 text-purple-400 flex-shrink-0" />;
       case 'dataverse':
-        return <Database className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
+        return <Database20Regular className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
       case 'business_rule':
-        return <Scale className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
+        return <Scales20Regular className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
       case 'security_role':
-        return <Shield className="w-4 h-4 text-amber-400 flex-shrink-0" />;
+        return <Shield20Regular className="w-4 h-4 text-amber-400 flex-shrink-0" />;
       case 'flow':
-        return <Workflow className="w-4 h-4 text-sky-400 flex-shrink-0" />;
+        return <Flow20Regular className="w-4 h-4 text-sky-400 flex-shrink-0" />;
       case 'canvas_app':
-        return <Layout className="w-4 h-4 text-purple-400 flex-shrink-0" />;
+        return <AppGeneric20Regular className="w-4 h-4 text-purple-400 flex-shrink-0" />;
       case 'env_vars':
-        return <Sliders className="w-4 h-4 text-amber-400 flex-shrink-0" />;
+        return <SlideSettings20Regular className="w-4 h-4 text-amber-400 flex-shrink-0" />;
       default:
-        return <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />;
+        return <DocumentText20Regular className="w-4 h-4 text-slate-400 flex-shrink-0" />;
     }
   };
 
@@ -312,35 +312,35 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
         {
           id: 'business_rules',
           name: 'Business Rules',
-          icon: <Scale className="w-4 h-4 text-emerald-400 flex-shrink-0" />,
+          icon: <Scales20Regular className="w-4 h-4 text-emerald-400 flex-shrink-0" />,
           docs: brDocs,
           totalCount: documents.filter((d) => d.doc_type === 'business_rule').length,
         },
         {
           id: 'security_roles',
           name: 'Security Roles',
-          icon: <Shield className="w-4 h-4 text-amber-400 flex-shrink-0" />,
+          icon: <Shield20Regular className="w-4 h-4 text-amber-400 flex-shrink-0" />,
           docs: roleDocs,
           totalCount: documents.filter((d) => d.doc_type === 'security_role').length,
         },
         {
           id: 'flows',
           name: 'Cloud Flows',
-          icon: <Workflow className="w-4 h-4 text-sky-400 flex-shrink-0" />,
+          icon: <Flow20Regular className="w-4 h-4 text-sky-400 flex-shrink-0" />,
           docs: flowDocs,
           totalCount: documents.filter((d) => d.doc_type === 'flow').length,
         },
         {
           id: 'canvas_apps',
           name: 'Canvas Applications',
-          icon: <Layout className="w-4 h-4 text-purple-400 flex-shrink-0" />,
+          icon: <AppGeneric20Regular className="w-4 h-4 text-purple-400 flex-shrink-0" />,
           docs: appDocs,
           totalCount: documents.filter((d) => d.doc_type === 'canvas_app').length,
         },
         {
           id: 'other',
           name: 'Other Modules',
-          icon: <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />,
+          icon: <DocumentText20Regular className="w-4 h-4 text-slate-400 flex-shrink-0" />,
           docs: otherDocs,
           totalCount: documents.filter(
             (d) => !['overview', 'dataverse', 'business_rule', 'security_role', 'flow', 'canvas_app', 'env_vars'].includes(d.doc_type)
@@ -384,7 +384,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
               onClick={() => setShowExportMenu(!showExportMenu)}
               className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-750 text-xs font-medium rounded-lg text-slate-200 border border-slate-700/70 transition shadow-sm"
             >
-              <Download className="w-3.5 h-3.5 text-indigo-400" />
+              <ArrowDownload20Regular className="w-3.5 h-3.5 text-purple-400" />
               Export Documentation
             </button>
 
@@ -397,7 +397,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                   }}
                   className="w-full px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2.5 transition"
                 >
-                  <Archive className="w-4 h-4 text-amber-400" />
+                  <FolderZip20Regular className="w-4 h-4 text-amber-400" />
                   <div>
                     <div className="font-medium">ZIP Bundle (.zip)</div>
                     <div className="text-[10px] text-slate-400">Organized Markdown files + AST</div>
@@ -410,7 +410,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                   }}
                   className="w-full px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2.5 transition"
                 >
-                  <FileText className="w-4 h-4 text-emerald-400" />
+                  <DocumentText20Regular className="w-4 h-4 text-emerald-400" />
                   <div>
                     <div className="font-medium">Consolidated Markdown (.md)</div>
                     <div className="text-[10px] text-slate-400">Single handbook with TOC</div>
@@ -423,7 +423,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                   }}
                   className="w-full px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2.5 transition"
                 >
-                  <FileCode className="w-4 h-4 text-sky-400" />
+                  <Code20Regular className="w-4 h-4 text-sky-400" />
                   <div>
                     <div className="font-medium">Raw AST JSON (.json)</div>
                     <div className="text-[10px] text-slate-400">Normalized schema metadata</div>
@@ -437,13 +437,13 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
         {/* Filter search */}
         <div className="p-3 border-b border-slate-800/80">
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+            <Search20Regular className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
             <input
               type="text"
               placeholder="Filter documents..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-950/60 border border-slate-800 rounded-md text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-950/60 border border-slate-800 rounded-md text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-purple-500 transition"
             />
           </div>
         </div>
@@ -456,18 +456,18 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
               onClick={() => onSelectDoc(ALL_DOCS_ID)}
               className={`w-full flex items-start gap-2.5 p-2.5 rounded-xl text-left transition group relative overflow-hidden border ${
                 isAllInOne
-                  ? 'bg-gradient-to-r from-indigo-950/80 via-purple-950/60 to-slate-900 text-indigo-200 border-indigo-500/60 shadow-md shadow-indigo-950/50'
+                  ? 'bg-gradient-to-r from-purple-950/80 via-slate-900 to-slate-900 text-purple-200 border-purple-500/60 shadow-md shadow-purple-950/50'
                   : 'bg-slate-950/40 hover:bg-slate-800/60 text-slate-300 border-slate-800/80 hover:border-slate-700'
               }`}
             >
               <div
                 className={`p-1.5 rounded-lg flex-shrink-0 mt-0.5 ${
                   isAllInOne
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-slate-800 text-indigo-400 group-hover:bg-slate-700'
+                    ? 'bg-purple-700 text-white shadow-sm'
+                    : 'bg-slate-800 text-purple-400 group-hover:bg-slate-700'
                 }`}
               >
-                <BookOpenCheck className="w-4 h-4" />
+                <DocumentCheckmark20Regular className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-1">
@@ -475,7 +475,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                     Full Solution Handbook
                   </span>
                   <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0 flex items-center gap-1">
-                    <Sparkles className="w-2.5 h-2.5" />
+                    <Sparkle20Filled className="w-2.5 h-2.5" />
                     AI Ready
                   </span>
                 </div>
@@ -528,9 +528,9 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
               >
                 {getDocIcon(doc.doc_type)}
                 <span className="flex-1 truncate">{doc.title}</span>
-                <ChevronRight
+                <ChevronRight20Regular
                   className={`w-3.5 h-3.5 transition-transform ${
-                    isActive ? 'text-indigo-400 translate-x-0.5' : 'text-slate-600 opacity-0 group-hover:opacity-100'
+                    isActive ? 'text-purple-400 translate-x-0.5' : 'text-slate-600 opacity-0 group-hover:opacity-100'
                   }`}
                 />
               </button>
@@ -549,11 +549,11 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                   onClick={() => toggleCategory(folder.id)}
                   className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs transition group font-medium ${
                     hasActiveChild && isCollapsed
-                      ? 'text-indigo-300 bg-indigo-950/30 border border-indigo-500/20'
+                      ? 'text-purple-300 bg-purple-950/30 border border-purple-500/20'
                       : 'text-slate-300 hover:bg-slate-800/60 hover:text-slate-100'
                   }`}
                 >
-                  <ChevronDown
+                  <ChevronDown20Regular
                     className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 flex-shrink-0 ${
                       isCollapsed ? '-rotate-90' : 'rotate-0'
                     }`}
@@ -590,18 +590,18 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                           title={doc.title}
                           className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left text-xs transition group ${
                             isActive
-                              ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 font-medium'
+                              ? 'bg-purple-950/40 text-purple-300 border border-purple-500/30 font-medium'
                               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                           }`}
                         >
                           <span
                             className={`w-1.5 h-1.5 rounded-full transition-colors flex-shrink-0 ${
-                              isActive ? 'bg-indigo-400 scale-125' : 'bg-slate-600 group-hover:bg-slate-400'
+                              isActive ? 'bg-purple-400 scale-125' : 'bg-slate-600 group-hover:bg-slate-400'
                             }`}
                           />
                           <span className="flex-1 truncate">{displayTitle}</span>
                           {isActive && (
-                            <ChevronRight className="w-3 h-3 text-indigo-400 flex-shrink-0" />
+                            <ChevronRight20Regular className="w-3 h-3 text-purple-400 flex-shrink-0" />
                           )}
                         </button>
                       );
@@ -635,9 +635,9 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
               title={isSidebarOpen ? 'Hide Navigation Sidebar' : 'Show Navigation Sidebar'}
             >
               {isSidebarOpen ? (
-                <PanelLeftClose className="w-4 h-4" />
+                <PanelLeftContract20Regular className="w-4 h-4" />
               ) : (
-                <PanelLeft className="w-4 h-4 text-indigo-400" />
+                <PanelLeft20Regular className="w-4 h-4 text-purple-400" />
               )}
             </button>
 
@@ -646,7 +646,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
               <span className="text-slate-400 font-medium truncate max-w-[120px] sm:max-w-[180px]">
                 {project.display_name}
               </span>
-              <ChevronRight className="w-3 h-3 text-slate-600 flex-shrink-0" />
+              <ChevronRight20Regular className="w-3 h-3 text-slate-600 flex-shrink-0" />
               <span className="text-slate-500 uppercase tracking-wider text-[10px] font-semibold flex-shrink-0">
                 {isAllInOne
                   ? 'Handbook'
@@ -664,7 +664,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
               </span>
               {activeDoc && (
                 <>
-                  <ChevronRight className="w-3 h-3 text-slate-600 flex-shrink-0" />
+                  <ChevronRight20Regular className="w-3 h-3 text-slate-600 flex-shrink-0" />
                   <span className="text-slate-200 font-semibold truncate max-w-[150px] sm:max-w-[260px]">
                     {activeDoc.title}
                   </span>
@@ -681,12 +681,12 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                 onClick={() => setShowAgentMetadata((prev) => !prev)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition border ${
                   showAgentMetadata
-                    ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/50'
+                    ? 'bg-purple-900/30 text-purple-300 border-purple-500/50'
                     : 'text-slate-400 hover:text-slate-200 border-slate-700/60 hover:bg-slate-800/60'
                 }`}
                 title={showAgentMetadata ? 'Hide Agent Metadata' : 'View Hidden Agent Metadata'}
               >
-                <Bot className="w-3.5 h-3.5 text-indigo-400" />
+                <Bot20Regular className="w-3.5 h-3.5 text-purple-400" />
                 <span className="hidden sm:inline">Agent Meta</span>
               </button>
             )}
@@ -697,20 +697,20 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
               onClick={() => setIsChatOpen(!isChatOpen)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-sm ${
                 isChatOpen
-                  ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-600/30'
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                  ? 'bg-purple-900/30 text-purple-300 border border-purple-500/40 hover:bg-purple-900/40'
+                  : 'bg-power-purple hover:bg-purple-700 text-white'
               }`}
               title={isChatOpen ? 'Hide PP AI Sidepanel' : 'Open PP AI Sidepanel'}
             >
-              <MessageSquare className="w-3.5 h-3.5" />
+              <Chat20Regular className="w-3.5 h-3.5" />
               <span className="font-medium">
-                {isChatOpen ? 'PP AI' : 'Ask PP AI'}
+                {isChatOpen ? 'PP AI Copilot' : 'Ask PP AI'}
               </span>
               {isChatOpen ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               ) : (
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/40 text-indigo-100 font-mono hidden sm:inline">
-                  AI
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/40 text-purple-100 font-mono hidden sm:inline">
+                  Copilot
                 </span>
               )}
             </button>
@@ -727,11 +727,11 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
             {activeDoc ? (
               <article className="prose prose-invert prose-slate max-w-none">
                 {isAllInOne && (
-                  <div className="not-prose mb-8 rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 via-slate-900/90 to-purple-950/30 p-5 shadow-xl backdrop-blur-md">
+                  <div className="not-prose mb-8 rounded-2xl border border-purple-500/30 bg-gradient-to-br from-purple-950/40 via-slate-900/90 to-purple-950/30 p-5 shadow-xl backdrop-blur-md">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20 flex-shrink-0">
-                          <Sparkles className="w-5 h-5 text-indigo-100" />
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-700 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-purple-900/30 flex-shrink-0">
+                          <Sparkle20Filled className="w-5 h-5 text-purple-100" />
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
@@ -763,12 +763,12 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                         >
                           {hasCopiedMarkdown ? (
                             <>
-                              <Check className="w-3.5 h-3.5 text-white" />
+                              <Checkmark20Regular className="w-3.5 h-3.5 text-white" />
                               <span>Copied!</span>
                             </>
                           ) : (
                             <>
-                              <Copy className="w-3.5 h-3.5 text-indigo-400" />
+                              <Copy20Regular className="w-3.5 h-3.5 text-purple-400" />
                               <span>Copy Markdown</span>
                             </>
                           )}
@@ -780,7 +780,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 hover:text-white transition shadow-sm"
                           title="Export consolidated markdown file"
                         >
-                          <Download className="w-3.5 h-3.5 text-emerald-400" />
+                          <ArrowDownload20Regular className="w-3.5 h-3.5 text-emerald-400" />
                           <span>Export .md</span>
                         </button>
 
@@ -790,7 +790,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 hover:text-white transition shadow-sm"
                           title="Print or save as PDF"
                         >
-                          <Printer className="w-3.5 h-3.5 text-sky-400" />
+                          <Print20Regular className="w-3.5 h-3.5 text-sky-400" />
                           <span>Print / PDF</span>
                         </button>
                       </div>
@@ -799,7 +799,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                     {/* Tips for Copilot / Browser AI */}
                     <div className="mt-3.5 pt-1 text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
                       <span className="font-semibold text-slate-300 flex items-center gap-1">
-                        <Bot className="w-3.5 h-3.5 text-indigo-400" />
+                        <Bot20Regular className="w-3.5 h-3.5 text-purple-400" />
                         Sample Copilot prompts:
                       </span>
                       <span className="text-slate-400 font-mono text-[10px] bg-slate-950/60 px-2 py-0.5 rounded border border-slate-800 truncate">
@@ -819,10 +819,10 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
                 )}
 
                 {showAgentMetadata && rawFrontmatter && (
-                  <div className="not-prose mb-6 rounded-xl border border-indigo-500/30 bg-slate-900/90 p-4 shadow-lg backdrop-blur-sm">
-                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-xs font-semibold text-indigo-300">
+                  <div className="not-prose mb-6 rounded-xl border border-purple-500/30 bg-slate-900/90 p-4 shadow-lg backdrop-blur-sm">
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-xs font-semibold text-purple-300">
                       <div className="flex items-center gap-2">
-                        <Bot className="w-4 h-4 text-indigo-400" />
+                        <Bot20Regular className="w-4 h-4 text-purple-400" />
                         <span>Background Agent Metadata (Hidden from Document)</span>
                       </div>
                       <button
@@ -984,7 +984,7 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
               </article>
             ) : (
               <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-                <FileText className="w-12 h-12 mb-3 text-slate-600" />
+                <DocumentText20Regular className="w-12 h-12 mb-3 text-slate-600" />
                 <p className="text-base font-medium">Select a document from the left navigation</p>
               </div>
             )}
@@ -992,10 +992,10 @@ export const MarkdownReader: React.FC<MarkdownReaderProps> = ({
               <button
                 type="button"
                 onClick={scrollToTop}
-                className="fixed bottom-6 right-8 lg:right-12 z-30 p-2.5 rounded-full bg-indigo-600/90 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-950/60 backdrop-blur-sm transition-all duration-200 hover:scale-105 border border-indigo-400/40 flex items-center gap-1.5 text-xs font-medium"
+                className="fixed bottom-6 right-8 lg:right-12 z-30 p-2.5 rounded-full bg-power-purple/90 hover:bg-purple-700 text-white shadow-lg shadow-purple-950/60 backdrop-blur-sm transition-all duration-200 hover:scale-105 border border-purple-400/40 flex items-center gap-1.5 text-xs font-medium"
                 title="Scroll back to top"
               >
-                <ArrowUp className="w-4 h-4" />
+                <ArrowUp20Regular className="w-4 h-4" />
                 <span className="hidden sm:inline">Top</span>
               </button>
             )}
