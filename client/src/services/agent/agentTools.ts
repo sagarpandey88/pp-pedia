@@ -19,6 +19,8 @@ import {
 import { SimilarityResult } from '../../types/db';
 import { AgentExecutionContext, AgentActivityStep } from './agentTypes';
 import { logger } from '../logger';
+import { computeSolutionDiff } from '../diff/diffEngine';
+import { generateDeterministicSummary } from '../diff/aiSummary';
 
 function extractHeadingSection(markdown: string, headingQuery: string): string {
   const lines = markdown.split('\n');
@@ -1301,6 +1303,81 @@ export function createVisualizeEntityRelationshipsTool() {
   });
 }
 
+export function createCompareSolutionVersionsTool() {
+  return tool({
+    name: 'compare_solution_versions',
+    description:
+      'Compares two Power Platform solutions or versions, computing all added, modified, and removed components, breaking changes, and summary metrics.',
+    parameters: z.object({
+      base_solution: z.string().optional().describe('Unique name, ID, or version of base solution'),
+      target_solution: z.string().optional().describe('Unique name, ID, or version of target solution'),
+      projectId: z.string().optional().describe('Fallback project ID'),
+    }),
+    execute: async ({ base_solution, target_solution, projectId }, { context }: { context?: AgentExecutionContext } = {}) => {
+      const { stepId, startTime } = startStep(
+        context,
+        'compare_solution_versions',
+        'Computing deep solution version differences',
+        { base_solution, target_solution }
+      );
+
+      try {
+        const projects = await getProjects();
+        if (projects.length === 0) {
+          finishStep(context, stepId, startTime, '0 projects available');
+          return 'No solutions found in the repository to compare.';
+        }
+
+        let baseProj = projects.find(
+          (p) =>
+            p.id === base_solution ||
+            p.unique_name.toLowerCase() === base_solution?.toLowerCase() ||
+            p.id === projectId
+        );
+        if (!baseProj) {
+          baseProj = projects[0];
+        }
+
+        let targetProj = projects.find(
+          (p) =>
+            p.id !== baseProj!.id &&
+            (p.id === target_solution ||
+              p.unique_name.toLowerCase() === target_solution?.toLowerCase() ||
+              p.version === target_solution)
+        );
+        if (!targetProj) {
+          targetProj = projects.find((p) => p.id !== baseProj!.id);
+        }
+
+        if (!targetProj) {
+          finishStep(context, stepId, startTime, 'Only 1 solution exists');
+          return `Only one solution (\`${baseProj.display_name} v${baseProj.version}\`) is currently ingested. Please upload or ingest a second solution version to compute differences.`;
+        }
+
+        if (!baseProj.ast_json || !targetProj.ast_json) {
+          finishStep(context, stepId, startTime, 'AST missing');
+          return `AST metadata missing for solution comparison.`;
+        }
+
+        const diff = computeSolutionDiff(baseProj.ast_json, targetProj.ast_json);
+        const summary = generateDeterministicSummary(diff);
+
+        finishStep(
+          context,
+          stepId,
+          startTime,
+          `Diff computed: +${diff.metrics.addedCount}, ~${diff.metrics.modifiedCount}, -${diff.metrics.removedCount}`
+        );
+
+        return summary;
+      } catch (err: any) {
+        finishStep(context, stepId, startTime, `Error: ${err?.message || err}`, true);
+        return `Error comparing solution versions: ${err?.message || err}`;
+      }
+    },
+  });
+}
+
 export function getAllAgentTools() {
   return [
     createCountSolutionComponentsTool(),
@@ -1319,6 +1396,7 @@ export function getAllAgentTools() {
     createInspectCloudFlowTool(),
     createInspectCanvasAppTool(),
     createListSolutionsTool(),
+    createCompareSolutionVersionsTool(),
   ];
 }
 
@@ -1539,6 +1617,19 @@ export const GOOGLE_TOOL_DECLARATIONS = [
     parametersJsonSchema: {
       type: 'object',
       properties: {},
+    },
+  },
+  {
+    name: 'compare_solution_versions',
+    description:
+      'Compares two Power Platform solutions or versions, computing all added, modified, and removed components, breaking changes, and summary metrics.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        base_solution: { type: 'string', description: 'Base solution unique name or ID' },
+        target_solution: { type: 'string', description: 'Target solution unique name, ID, or version' },
+        projectId: { type: 'string', description: 'Active project ID' },
+      },
     },
   },
 ];
@@ -1771,6 +1862,7 @@ export function getLocalAgentTools(curatedOnly = true): LocalAgentToolSet {
     'semantic_search',
     'read_document_markdown',
     'list_solutions',
+    'compare_solution_versions',
   ]);
 
   const sourceDeclarations = curatedOnly

@@ -3,6 +3,7 @@ import { Header, AppView } from './components/common/Header';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { MarkdownReader, ALL_DOCS_ID } from './components/reader/MarkdownReader';
 import { ChatAssistant } from './components/chat/ChatAssistant';
+import { SolutionDiffView } from './components/diff/SolutionDiffView';
 import { SettingsModal } from './components/settings/SettingsModal';
 import {
   IngestionProgressModal,
@@ -39,6 +40,14 @@ export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [aiInfo, setAiInfo] = useState<ActiveAIInfo>(() => getActiveAIInfo(getAISettings()));
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [diffBaseProjectId, setDiffBaseProjectId] = useState<string | undefined>(undefined);
+  const [diffTargetProjectId, setDiffTargetProjectId] = useState<string | undefined>(undefined);
+
+  const handleStartCompare = (baseId: string, targetId: string) => {
+    setDiffBaseProjectId(baseId);
+    setDiffTargetProjectId(targetId);
+    setCurrentView('diff');
+  };
 
   // Ingestion modal state
   const [isIngesting, setIsIngesting] = useState(false);
@@ -324,6 +333,7 @@ export function App() {
               setActiveProjectId(id);
               setCurrentView('chat');
             }}
+            onSelectProjectForCompare={handleStartCompare}
             onDeleteProject={handleDeleteProject}
             onUploadFile={handleUploadFile}
             isProcessing={isIngesting}
@@ -359,6 +369,18 @@ export function App() {
             messages={chatMessages}
             setMessages={setChatMessages}
             onDockToReader={() => setCurrentView('reader')}
+          />
+        )}
+
+        {currentView === 'diff' && (
+          <SolutionDiffView
+            projects={projects}
+            baseProjectId={diffBaseProjectId || projects[0]?.id || ''}
+            targetProjectId={diffTargetProjectId || projects[1]?.id || projects[0]?.id || ''}
+            onSelectBaseProject={setDiffBaseProjectId}
+            onSelectTargetProject={setDiffTargetProjectId}
+            onBackToDashboard={() => setCurrentView('dashboard')}
+            aiInfo={aiInfo}
           />
         )}
       </main>

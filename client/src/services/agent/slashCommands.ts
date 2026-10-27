@@ -20,6 +20,24 @@ export interface SlashCommandDefinition {
 
 export const SLASH_COMMANDS: SlashCommandDefinition[] = [
   {
+    name: 'diff',
+    aliases: ['compare', 'versiondiff'],
+    label: 'Solution Diff',
+    icon: 'ArrowSwap',
+    description: 'Compare two solution versions: list all component deltas, breaking changes, and summary.',
+    parameters: [
+      {
+        name: 'target_solution',
+        description: 'Target solution unique name or version (optional if comparing against latest)',
+        required: false,
+      },
+    ],
+    category: 'analysis',
+    example: '/diff',
+    instantRun: true,
+    toolName: 'compare_solution_versions',
+  },
+  {
     name: 'health',
     aliases: ['audit', 'scorecard'],
     label: 'Health Audit',
