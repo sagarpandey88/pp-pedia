@@ -66,6 +66,12 @@ export async function executeLocalSlashCommand(
   const toolArgs: Record<string, unknown> = {};
 
   switch (commandDef.name) {
+    case 'diff':
+      toolArgs.base_solution = projectId;
+      toolArgs.target_solution = args[0] || undefined;
+      toolArgs.projectId = projectId;
+      break;
+
     case 'impact':
       toolArgs.entity_name = args[0];
       toolArgs.column_name = args[1];

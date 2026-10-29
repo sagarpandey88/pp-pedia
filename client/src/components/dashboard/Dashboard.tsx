@@ -12,10 +12,12 @@ import {
   FolderZip20Regular,
   DocumentText20Regular,
   Code20Regular,
+  ArrowSwap20Regular,
 } from '@fluentui/react-icons';
 import { Button, Badge, Tooltip } from '@fluentui/react-components';
 import { ProjectRecord } from '../../types/db';
 import { UploadZone } from './UploadZone';
+import { CompareModal } from '../diff/CompareModal';
 import {
   exportDocsAsZip,
   exportDocsAsSingleMarkdown,
@@ -27,6 +29,7 @@ interface DashboardProps {
   projects: ProjectRecord[];
   onSelectProjectForDocs: (id: string) => void;
   onSelectProjectForChat: (id: string) => void;
+  onSelectProjectForCompare: (baseId: string, targetId: string) => void;
   onDeleteProject: (id: string) => void;
   onUploadFile: (file: File | Blob) => void;
   isProcessing?: boolean;
@@ -36,11 +39,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   projects,
   onSelectProjectForDocs,
   onSelectProjectForChat,
+  onSelectProjectForCompare,
   onDeleteProject,
   onUploadFile,
   isProcessing = false,
 }) => {
   const [activeExportMenu, setActiveExportMenu] = useState<string | null>(null);
+  const [compareModalBaseProj, setCompareModalBaseProj] = useState<ProjectRecord | null>(null);
 
   const handleExport = async (project: ProjectRecord, format: 'zip' | 'md' | 'json') => {
     setActiveExportMenu(null);
@@ -178,6 +183,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       >
                         PP AI
                       </Button>
+
+                      <Button
+                        appearance="subtle"
+                        size="small"
+                        icon={<ArrowSwap20Regular className="text-purple-400" />}
+                        onClick={() => setCompareModalBaseProj(proj)}
+                      >
+                        Compare
+                      </Button>
                     </div>
 
                     <div className="flex items-center gap-1">
@@ -248,6 +262,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
           )}
         </div>
       </div>
+
+      <CompareModal
+        isOpen={Boolean(compareModalBaseProj)}
+        onClose={() => setCompareModalBaseProj(null)}
+        baseProject={compareModalBaseProj}
+        projects={projects}
+        onStartCompare={onSelectProjectForCompare}
+        onUploadNewVersion={async (file) => onUploadFile(file)}
+        isUploading={isProcessing}
+      />
     </div>
   );
 };

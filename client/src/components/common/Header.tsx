@@ -7,6 +7,8 @@ import {
   BookOpen20Regular,
   Chat20Filled,
   Chat20Regular,
+  ArrowSwap20Filled,
+  ArrowSwap20Regular,
   Settings20Regular,
   ShieldCheckmark20Regular,
   Flash20Regular,
@@ -16,11 +18,12 @@ import { TabList, Tab, Button } from '@fluentui/react-components';
 import { ProjectRecord } from '../../types/db';
 import { ActiveAIInfo } from '../../services/generator/docGenerator';
 
-export type AppView = 'dashboard' | 'reader' | 'chat';
+export type AppView = 'dashboard' | 'reader' | 'chat' | 'diff';
 
 const DashboardIcon = bundleIcon(Layer20Filled, Layer20Regular);
 const DocsIcon = bundleIcon(BookOpen20Filled, BookOpen20Regular);
 const ChatIcon = bundleIcon(Chat20Filled, Chat20Regular);
+const CompareIcon = bundleIcon(ArrowSwap20Filled, ArrowSwap20Regular);
 
 interface HeaderProps {
   currentView: AppView;
@@ -95,6 +98,13 @@ export const Header: React.FC<HeaderProps> = ({
             >
               PP AI Copilot
             </Tab>
+            <Tab
+              value="diff"
+              disabled={projects.length < 2 && currentView !== 'diff'}
+              icon={<CompareIcon />}
+            >
+              Compare
+            </Tab>
           </TabList>
         </nav>
       </div>
@@ -102,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Right Controls */}
       <div className="flex items-center gap-3">
         {/* Solution Switcher (Visible in Reader or Chat) */}
-        {projects.length > 0 && currentView !== 'dashboard' && (
+        {projects.length > 0 && currentView !== 'dashboard' && currentView !== 'diff' && (
           <div className="hidden sm:flex items-center gap-2 bg-slate-950/70 px-3 py-1.5 rounded-lg border border-slate-800">
             <span className="text-[11px] text-slate-400">Solution:</span>
             <select
